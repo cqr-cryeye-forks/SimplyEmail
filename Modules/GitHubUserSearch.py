@@ -1,70 +1,59 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import configparser
+import logging
 from Helpers import Download
 from Helpers import Parser
 from Helpers import helpers
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-
-class ClassName(object):
-
+class GitHubUserSearch:
     def __init__(self, domain, verbose=False):
-        self.apikey = False
         self.name = "Searching GitHubUser Search"
-        self.description = "Search GitHubUser for emails the user search function"
+        self.description = "Search GitHubUser for emails using the user search function"
         self.domain = domain
-        config = configparser.ConfigParser()
         self.verbose = verbose
-        self.Html = ""
+        self.html = ""
+        self.user_agent = {'User-Agent': helpers.get_user_agent()}
+
+        config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.Depth = int(config['GitHubUserSearch']['PageDepth'])
-            self.Counter = int(config['GitHubUserSearch']['QueryStart'])
-        except:
-            print helpers.color(" [*] Major Settings for GitHubUserSearch are missing, EXITING!\n", warning=True)
+            self.depth = int(config['GitHubUserSearch']['PageDepth'])
+            self.counter = int(config['GitHubUserSearch']['QueryStart'])
+        except KeyError as e:
+            logger.error(f"Major settings for GitHubUserSearch are missing: {e}")
+            raise SystemExit(f"Major settings for GitHubUserSearch are missing: {e}")
 
     def execute(self):
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def search(self):
         dl = Download.Download(verbose=self.verbose)
-        while self.Counter <= self.Depth and self.Counter <= 100:
+        while self.counter <= self.depth and self.counter <= 100:
             helpers.modsleep(5)
             if self.verbose:
-                p = ' [*] GitHubUser Search on page: ' + str(self.Counter)
-                print helpers.color(p, firewall=True)
+                logger.info(f"GitHubUser Search on page: {self.counter}")
             try:
-                url = 'https://github.com/search?p=' + str(self.Counter) + '&q=' + \
-                    str(self.domain) + 'ref=searchresults&type=Users&utf8='
+                url = (f"https://github.com/search?p={self.counter}&q={self.domain}"
+                       f"&ref=searchresults&type=Users&utf8=")
+                response = dl.requesturl(url, useragent=self.user_agent, raw=True, timeout=10)
+                response.raise_for_status()
+                self.html += response.content
             except Exception as e:
-                error = " [!] Major issue with GitHubUser Search:" + str(e)
-                print helpers.color(error, warning=True)
-            try:
-                r = dl.requesturl(
-                    url, useragent=self.UserAgent, raw=True, timeout=10)
-            except Exception as e:
-                error = " [!] Fail during Request to GitHubUser (Check Connection):" + \
-                    str(e)
-                print helpers.color(error, warning=True)
-            results = r.content
-            self.Html += results
-            self.Counter += 1
+                logger.error(f"Major issue with GitHubUser Search: {e}")
+                break
+            self.counter += 1
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Html)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parser = Parser.Parser(self.html)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
+        return final_output, html_results, json_results

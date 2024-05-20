@@ -1,82 +1,65 @@
 #!/usr/bin/env python
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
 import configparser
 import time
 import logging
-from Helpers import Download
-from Helpers import helpers
-from Helpers import Parser
+from Helpers import Download, helpers, Parser
 
 
-class ClassName(object):
-
-    def __init__(self, Domain, verbose=False):
+class ClassName:
+    def __init__(self, domain, verbose=False):
         self.apikey = False
         self.name = "RedditPost Search for Emails"
-        self.description = "Uses RedditPosts to search for emails, and Parse the raw results ATM"
+        self.description = "Uses RedditPosts to search for emails, and parse the raw results ATM"
+        self.domain = domain
+        self.verbose = verbose
+        self.html = ""
+        self.logger = logging.getLogger("SimplyEmail.RedditPostSearch")
+        self.load_config()
+
+    def load_config(self):
         config = configparser.ConfigParser()
         try:
-            self.logger = logging.getLogger("SimplyEmail.RedditPostSearch")
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.Limit = int(config['RedditPostSearch']['QueryLimit'])
-            self.Counter = int(config['RedditPostSearch']['QueryStart'])
-            self.verbose = verbose
-            self.Html = ""
-        except Exception as e:
-            self.logger.critical(
-                'RedditPostSearch module failed to load: ' + str(e))
-            print helpers.color(" [*] Major Settings for RedditPostSearch are missing, EXITING!\n", warning=True)
+            self.user_agent = {'User-Agent': helpers.get_user_agent()}
+            self.limit = int(config['RedditPostSearch']['QueryLimit'])
+            self.counter = int(config['RedditPostSearch']['QueryStart'])
+        except KeyError as e:
+            self.logger.critical(f"RedditPostSearch module failed to load: {e}")
+            print(helpers.color(" [*] Major Settings for RedditPostSearch are missing, EXITING!\n", warning=True))
+            raise e
 
     def execute(self):
         self.logger.debug("RedditPostSearch started")
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def search(self):
         dl = Download.Download(self.verbose)
-        while self.Counter <= self.Limit and self.Counter <= 1000:
+        while self.counter <= self.limit and self.counter <= 1000:
             time.sleep(1)
             if self.verbose:
-                p = ' [*] RedditPost Search on result: ' + str(self.Counter)
-                self.logger.debug(
-                    "RedditPost Search on result: " + str(self.Counter))
-                print helpers.color(p, firewall=True)
+                p = f' [*] RedditPost Search on result: {self.counter}'
+                self.logger.debug(f"RedditPost Search on result: {self.counter}")
+                print(helpers.color(p, firewall=True))
             try:
-                url = "https://www.reddit.com/search?q=%40" + str(self.Domain) + \
-                    "&restrict_sr=&sort=relevance&t=all&count=" + str(self.Counter) + \
-                    '&after=t3_3mkrqg'
+                url = (f"https://www.reddit.com/search?q=%40{self.domain}"
+                       f"&restrict_sr=&sort=relevance&t=all&count={self.counter}&after=t3_3mkrqg")
+                raw_html = dl.requesturl(url, useragent=self.user_agent)
+                self.html += raw_html
             except Exception as e:
-                error = " [!] Major issue with RedditPost search:" + str(e)
-                self.logger.error(
-                    "Major issue with RedditPostSearch: " + str(e))
-                print helpers.color(error, warning=True)
-            try:
-                RawHtml = dl.requesturl(url, useragent=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to Reddit (Check Connection):" + \
-                    str(e)
-                self.logger.error(
-                    "Fail during Request to Reddit (Check Connection): " + str(e))
-                print helpers.color(error, warning=True)
-            self.Html += RawHtml
-            # reddit seems to increment by 25 in cases
-            self.Counter += 25
+                error = f" [!] Fail during Request to Reddit (Check Connection): {e}"
+                self.logger.error(f"Fail during Request to Reddit (Check Connection): {e}")
+                print(helpers.color(error, warning=True))
+            self.counter += 25
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Html)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
+        parser = Parser.Parser(self.html)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
         self.logger.debug("RedditPostSearch completed search")
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results

@@ -2,63 +2,57 @@
 import requests
 import configparser
 import logging
-from Helpers import Parser
-from Helpers import helpers
+from Helpers import Parser, helpers
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
-
-
-class ClassName(object):
-
+class ClassName:
     def __init__(self, domain, verbose=False):
         self.apikey = False
         self.name = "Searching PGP"
         self.description = "Search the PGP database for potential emails"
         self.domain = domain
-        config = configparser.ConfigParser()
         self.results = ""
+        self.verbose = verbose
+        self.logger = logging.getLogger("SimplyEmail.SearchPGP")
+        self.load_config()
+
+    def load_config(self):
+        config = configparser.ConfigParser()
         try:
-            self.logger = logging.getLogger("SimplyEmail.SearchPGP")
             config.read('Common/SimplyEmail.ini')
-            self.server = str(config['SearchPGP']['KeyServer'])
-            self.hostname = str(config['SearchPGP']['Hostname'])
-            self.UserAgent = str(config['GlobalSettings']['UserAgent'])
-            self.verbose = verbose
-        except Exception as e:
-            self.logger.critical(
-                'SearchPGP module failed to __init__: ' + str(e))
-            print helpers.color("[*] Major Settings for SearchPGP are missing, EXITING!\n", warning=True)
+            self.server = config['SearchPGP']['KeyServer']
+            self.hostname = config['SearchPGP']['Hostname']
+            self.user_agent = config['GlobalSettings']['UserAgent']
+        except KeyError as e:
+            self.logger.critical(f'SearchPGP module failed to load: {e}')
+            print(helpers.color("[*] Major Settings for SearchPGP are missing, EXITING!\n", warning=True))
+            raise e
 
     def execute(self):
         self.logger.debug("SearchPGP started")
         self.process()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def process(self):
+        url = f"http://{self.server}/pks/lookup?search={self.domain}&op=index"
+        headers = {'User-Agent': self.user_agent}
         try:
-            url = "http://pgp.mit.edu/pks/lookup?search=" + \
-                self.domain + "&op=index"
             self.logger.info("Requesting PGP keys")
-            r = requests.get(url)
-        except Exception as e:
-            error = " [!] Major issue with PGP Search:" + str(e)
-            self.logger.error("Major issue with PGP search: " + str(e))
-            print helpers.color(error, warning=True)
-        if self.verbose:
-            p = ' [*] Searching PGP Complete'
-            self.logger.info("SearchPGP Completed search")
-            print helpers.color(p, firewall=True)
-        self.results = r.content
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            self.results = response.content
+            if self.verbose:
+                print(helpers.color(' [*] Searching PGP Complete', firewall=True))
+                self.logger.info("SearchPGP Completed search")
+        except requests.RequestException as e:
+            error = f" [!] Major issue with PGP Search: {e}"
+            self.logger.error(error)
+            print(helpers.color(error, warning=True))
 
     def get_emails(self):
-        Parse = Parser.Parser(self.results)
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
+        parser = Parser.Parser(self.results)
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
         self.logger.debug("SearchPGP completed search")
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results

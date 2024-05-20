@@ -1,87 +1,68 @@
 #!/usr/bin/env python
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
-
-# Adapted from theHarvester:
-# https://github.com/laramies/theHarvester/blob/master/discovery/yahoosearch.py
-# https://emailhunter.co
-
 import configparser
 import requests
 import time
 import logging
-from Helpers import helpers
-from Helpers import Parser
+from Helpers import helpers, Parser
 
 
-class ClassName(object):
-
-    def __init__(self, Domain, verbose=False):
-        self.apikey = False
+class YahooEmailSearch:
+    def __init__(self, domain, verbose=False):
         self.name = "Yahoo Search for Emails"
-        self.description = "Uses Yahoo to search for emails, parses them out of the Html"
+        self.description = "Uses Yahoo to search for emails, parses them out of the HTML"
+        self.domain = domain
+        self.verbose = verbose
+        self.html = ""
+
         config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
             self.logger = logging.getLogger("SimplyEmail.YahooSearch")
-            self.Domain = Domain
-            self.Quanity = int(config['YahooSearch']['StartQuantity'])
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.Limit = int(config['YahooSearch']['QueryLimit'])
-            self.Counter = int(config['YahooSearch']['QueryStart'])
-            self.Sleep = int(config['SleepConfig']['QuerySleep'])
-            self.Jitter = int(config['SleepConfig']['QueryJitter'])
-            self.verbose = verbose
-            self.Html = ""
-        except Exception as e:
-            self.logger.critical(
-                'YahooSearch module failed to load: ' + str(e))
-            print helpers.color(" [*] Major Settings for YahooSearch are missing, EXITING!\n", warning=True)
+            self.quantity = int(config['YahooSearch']['StartQuantity'])
+            self.user_agent = {'User-Agent': helpers.get_user_agent()}
+            self.limit = int(config['YahooSearch']['QueryLimit'])
+            self.counter = int(config['YahooSearch']['QueryStart'])
+            self.sleep = int(config['SleepConfig']['QuerySleep'])
+            self.jitter = int(config['SleepConfig']['QueryJitter'])
+        except KeyError as e:
+            self.logger.critical(f'YahooSearch module failed to load: {e}')
+            print(helpers.color("[*] Major Settings for YahooSearch are missing, EXITING!\n", warning=True))
 
     def execute(self):
-        self.logger.debug("AskSearch Started")
+        self.logger.debug("YahooSearch Started")
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def search(self):
-        while self.Counter <= self.Limit and self.Counter <= 1000:
-            time.sleep(1)
+        while self.counter <= self.limit and self.counter <= 1000:
+            time.sleep(self.sleep)
             if self.verbose:
-                p = ' [*] Yahoo Search on page: ' + str(self.Counter)
-                self.logger.info("YahooSearch on page:" + str(self.Counter))
-                print helpers.color(p, firewall=True)
+                msg = f' [*] Yahoo Search on page: {self.counter}'
+                self.logger.info(f"YahooSearch on page: {self.counter}")
+                print(helpers.color(msg, firewall=True))
+
+            url = f'https://search.yahoo.com/search?p={self.domain}&b={self.counter}&pz={self.quantity}'
             try:
-                url = 'https://search.yahoo.com/search?p=' + str(self.Domain) + \
-                    '&b=' + str(self.Counter) + "&pz=" + str(self.Quanity)
-            except Exception as e:
-                error = " [!] Major issue with Yahoo Search:" + str(e)
-                self.logger.error("Yahoo Search can not create URL:")
-                print helpers.color(error, warning=True)
-            try:
-                self.logger.debug("YahooSearch starting request on: " + str(url))
-                r = requests.get(url, headers=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to Yahoo (Check Connection):" + \
-                    str(e)
+                self.logger.debug(f"YahooSearch starting request on: {url}")
+                response = requests.get(url, headers=self.user_agent)
+                response.raise_for_status()
+                self.html += response.content.decode('utf-8')
+            except requests.RequestException as e:
+                error_msg = f" [!] Fail during Request to Yahoo (Check Connection): {e}"
                 self.logger.error("YahooSearch failed to request (Check Connection)")
-                print helpers.color(error, warning=True)
-            results = r.content
-            self.Html += results
-            self.Counter += 100
-            #helpers.modsleep(self.Sleep, jitter=self.Jitter)
+                print(helpers.color(error_msg, warning=True))
+
+            self.counter += 100
+            # helpers.modsleep(self.sleep, jitter=self.jitter)
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Html)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
+        parser = Parser.Parser(self.html)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
         self.logger.debug('YahooSearch completed search')
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results

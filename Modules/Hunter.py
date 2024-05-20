@@ -1,152 +1,135 @@
 #!/usr/bin/env python
 import configparser
 import logging
-from Helpers import Download
-from Helpers import Parser
-from Helpers import helpers
-
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
-
-# https://api.hunter.io/v2/domain-search?domain=any.com&type=personal&limit=100&offset=0&api_key=your_api_key
+from Helpers import Download, Parser, helpers
 
 
-class ClassName(object):
-
+class ClassName:
     def __init__(self, domain, verbose=False):
         self.apikey = True
         self.name = "Hunter API"
         self.description = "Search the Hunter DB for potential emails"
         self.domain = domain
-        config = configparser.ConfigParser()
-        self.results = []
         self.verbose = verbose
+        self.results = []
+        self.logger = logging.getLogger("SimplyEmail.Hunter")
+        config = self.load_config()
+        self.set_attributes(config)
+
+    def load_config(self):
+        config = configparser.ConfigParser()
+        config.read('Common/SimplyEmail.ini')
+        return config
+
+    def set_attributes(self, config):
         try:
-            self.logger = logging.getLogger("SimplyEmail.Hunter")
-            config.read('Common/SimplyEmail.ini')
-            self.UserAgent = str(config['GlobalSettings']['UserAgent'])
-            self.apikeyv = str(config['APIKeys']['Hunter'])
+            self.UserAgent = config['GlobalSettings']['UserAgent']
+            self.apikeyv = config['APIKeys']['Hunter']
             self.RequestLimit = int(config['Hunter']['RequestLimit'])
             self.QuotaLimit = int(config['Hunter']['QuotaLimit'])
-            self.EmailType = str(config['Hunter']['EmailType'])
+            self.EmailType = config['Hunter']['EmailType']
+            self.set_email_type()
+        except KeyError as e:
+            self.logger.critical(f"Hunter module failed to initialize: {e}")
+            print(helpers.color(f" [*] Error in Hunter settings: {e}\n", warning=True))
 
-            if self.EmailType == "Both":
-                self.type = ""
-                self.etype = "total"
-            elif self.EmailType == "Personal":
-                self.type = "&type=personal"
-                self.etype = "personal_emails"
-            elif self.EmailType == "Generic":
-                self.type = "&type=generic"
-                self.etype = "generic_emails"
-            else:
-                raise Exception("Email Type setting invalid")
-        except Exception as e:
-            self.logger.critical("Hunter module failed to __init__: " + str(e))
-            print helpers.color(" [*] Error in Hunter settings: " + str(e) + "\n", warning=True)
+    def set_email_type(self):
+        if self.EmailType == "Both":
+            self.type = ""
+            self.etype = "total"
+        elif self.EmailType == "Personal":
+            self.type = "&type=personal"
+            self.etype = "personal_emails"
+        elif self.EmailType == "Generic":
+            self.type = "&type=generic"
+            self.etype = "generic_emails"
+        else:
+            raise ValueError("Email Type setting invalid")
 
     def execute(self):
         self.logger.debug("Hunter module started")
         self.process()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def process(self):
         dl = Download.Download(self.verbose)
-        try:
-            # We will check to see that we have enough requests left to make a search
-            url = "https://api.hunter.io/v2/account?api_key=" + self.apikeyv
-            r = dl.requesturl(url, useragent=self.UserAgent, raw=True)
-            accountInfo = r.json()
-            quota = int(accountInfo['data']['calls']['available'])
-            quotaUsed = int(accountInfo['data']['calls']['used'])
-            if quotaUsed >= self.QuotaLimit:
-                overQuotaLimit = True
-            else:
-                overQuotaLimit = False
-        except Exception as e:
-            error = " [!] Hunter API error: " + str(accountInfo['errors'][0]['details'])
-            print helpers.color(error, warning=True)      
-        try:
-            # Hunter's API only allows 100 emails per request, so we check the number of emails Hunter has 
-            # on our specified domain, and if it's over 100 we need to make multiple requests to get all of the emails
-            url = "https://api.hunter.io/v2/email-count?domain=" + self.domain
-            r = dl.requesturl(url, useragent=self.UserAgent, raw=True)
-            response = r.json()
-            totalEmails = int(response['data'][self.etype])
-            emailsLeft = totalEmails
-            offset = 0
-        except Exception as e:
-            error = "[!] Major issue with Hunter Search: " + str(e)
-            print helpers.color(error, warning=True)
-        requestsMade = 0
-        # Main loop to keep requesting the Hunter API until we get all of the emails they have
-        while emailsLeft > 0:
-            try:
-                if overQuotaLimit or requestsMade + quotaUsed >= self.QuotaLimit:
-                    if self.verbose:
-                        print helpers.color(" [*] You are over your set Quota Limit: " + \
-                            str(quotaUsed) + "/" + str(self.QuotaLimit) + " stopping search", firewall=True)
-                    break
-                elif self.RequestLimit != 0 and requestsMade >= self.RequestLimit:
-                    if self.verbose:
-                        print helpers.color(" [*] Stopping search due to user set Request Limit", firewall=True)
-                    break
+        over_quota_limit, quota_used = self.check_quota(dl)
+        total_emails, offset = self.check_email_count(dl)
 
-                # This returns a JSON object
-                url = "https://api.hunter.io/v2/domain-search?domain=" + \
-                    self.domain + self.type + "&limit=100&offset=" + str(offset) + "&api_key=" + self.apikeyv
-                r = dl.requesturl(url, useragent=self.UserAgent, raw=True)
-                results = r.json()
-                emailCount = int(results['meta']['results'])
-            except Exception as e:
-                error = " [!] Hunter API error: " + str(results['errors'][0]['details']) + " QUITTING!"
-                print helpers.color(error, warning=True)
+        requests_made = 0
+        while total_emails > 0:
+            if self.should_stop(over_quota_limit, quota_used, requests_made):
                 break
-            try:
-                # Make sure we don't exceed the index for the 'emails' array in the 'results' Json object
-                if emailsLeft < 100:
-                    emailCount = emailsLeft
-                if emailCount > 100:
-                    emailCount = 100
-                # 1 request is every 10 emails delivered
-                requestsMade += emailCount // 10
-                if emailCount % 10 != 0:
-                    requestsMade += 1
-                # The API starts at 0 for the first value
-                x = 0
-                # We will itirate of the Json object for the index objects
-                while x < emailCount:
-                    self.results.append(results['data']['emails'][int(x)]['value'])
-                    x += 1
-                emailsLeft -= emailCount
-                if emailsLeft > 100:
-                    offset += 100
-                else:
-                    offset += emailsLeft
-            except Exception as e:
-                error = " [!] Major issue with search parsing: " + str(e)
-                print helpers.color(error, warning=True)
-                break
+            requests_made += self.fetch_emails(dl, total_emails, offset)
+            total_emails -= 100
+            offset += 100
+
+        self.log_results(over_quota_limit, quota_used, requests_made)
+
+    def check_quota(self, dl):
+        try:
+            url = f"https://api.hunter.io/v2/account?api_key={self.apikeyv}"
+            response = dl.requesturl(url, useragent=self.UserAgent, raw=True).json()
+            quota = int(response['data']['calls']['available'])
+            quota_used = int(response['data']['calls']['used'])
+            over_quota_limit = quota_used >= self.QuotaLimit
+            return over_quota_limit, quota_used
+        except Exception as e:
+            self.logger.critical(f"Hunter API error: {e}")
+            raise
+
+    def check_email_count(self, dl):
+        try:
+            url = f"https://api.hunter.io/v2/email-count?domain={self.domain}"
+            response = dl.requesturl(url, useragent=self.UserAgent, raw=True).json()
+            total_emails = int(response['data'][self.etype])
+            return total_emails, 0
+        except Exception as e:
+            self.logger.critical(f"Major issue with Hunter search: {e}")
+            raise
+
+    def should_stop(self, over_quota_limit, quota_used, requests_made):
+        if over_quota_limit or requests_made >= self.RequestLimit:
+            if self.verbose:
+                print(helpers.color(
+                    f" [*] Search stopped: {quota_used}/{self.QuotaLimit} quota used",
+                    firewall=True
+                ))
+            return True
+        return False
+
+    def fetch_emails(self, dl, total_emails, offset):
+        try:
+            url = (f"https://api.hunter.io/v2/domain-search?domain={self.domain}"
+                   f"{self.type}&limit=100&offset={offset}&api_key={self.apikeyv}")
+            response = dl.requesturl(url, useragent=self.UserAgent, raw=True).json()
+            email_count = min(int(response['meta']['results']), total_emails)
+            self.results.extend([email['value'] for email in response['data']['emails'][:email_count]])
+            return email_count // 10 + (1 if email_count % 10 != 0 else 0)
+        except Exception as e:
+            self.logger.critical(f"Hunter API error: {e}")
+            raise
+
+    def log_results(self, over_quota_limit, quota_used, requests_made):
         if self.verbose:
-            # Print the avalible requests user has if verbose
-            print helpers.color(' [*] Hunter has completed JSON request', firewall=True)
-            requestsUsed = requestsMade + quotaUsed
-            if quota - requestsUsed <= 0:
-                print helpers.color(" [*] You have no Hunter requests left." \
-                    + "They will refill in about a month", firewall=True)
+            print(helpers.color(' [*] Hunter completed JSON request', firewall=True))
+            requests_used = requests_made + quota_used
+            if over_quota_limit:
+                print(helpers.color(
+                    " [*] No Hunter requests left. Refills in about a month",
+                    firewall=True
+                ))
             else:
-                print helpers.color(" [*] You have " + str(requestsUsed) \
-                    + "/" + str(quota) + " Hunter requests left", firewall=True) 
+                print(helpers.color(
+                    f" [*] {requests_used}/{requests_used + quota_used} Hunter requests left",
+                    firewall=True
+                ))
 
     def get_emails(self):
-        # Make sure you remove any newlines
-        Parse = Parser.Parser(self.results)
-        FinalOutput = Parse.CleanListOutput()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
+        parse = Parser.Parser(self.results)
+        final_output = parse.clean_list_output()
+        html_results = parse.build_results(final_output, self.name)
+        json_results = parse.build_json(final_output, self.name)
         self.logger.debug('Hunter completed search')
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results

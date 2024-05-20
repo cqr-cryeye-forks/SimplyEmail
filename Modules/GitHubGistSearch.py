@@ -1,89 +1,75 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import configparser
-from BeautifulSoup import BeautifulSoup
+import logging
+from bs4 import BeautifulSoup
 from Helpers import Download
 from Helpers import Parser
 from Helpers import helpers
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-
-# https://gist.github.com/search?utf8=✓&q=%40enron.com&ref=searchresults
-
-class ClassName(object):
-
+class GitHubGistSearch:
     def __init__(self, domain, verbose=False):
-        self.apikey = False
         self.name = "Searching GitHubGist Code"
         self.description = "Search GitHubGist code for emails using a large pool of code searches"
         self.domain = domain
-        config = configparser.ConfigParser()
-        self.Html = ""
+        self.html = ""
         self.verbose = verbose
+        self.user_agent = {'User-Agent': helpers.get_user_agent()}
+
+        config = configparser.ConfigParser()
         try:
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
             config.read('Common/SimplyEmail.ini')
-            self.Depth = int(config['GitHubGistSearch']['PageDepth'])
-            self.Counter = int(config['GitHubGistSearch']['QueryStart'])
-        except:
-            print helpers.color(" [*] Major Settings for GitHubGistSearch are missing, EXITING!\n", warning=True)
+            self.depth = int(config['GitHubGistSearch']['PageDepth'])
+            self.counter = int(config['GitHubGistSearch']['QueryStart'])
+        except KeyError as e:
+            logger.error(f"Major settings for GitHubGistSearch are missing: {e}")
+            raise SystemExit(f"Major settings for GitHubGistSearch are missing: {e}")
 
     def execute(self):
         self.process()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def process(self):
         dl = Download.Download(verbose=self.verbose)
-        # Get all the USER code Repos
-        # https://github.com/search?p=2&q=enron.com+&ref=searchresults&type=Code&utf8=✓
-        UrlList = []
-        while self.Counter <= self.Depth:
+        url_list = []
+
+        while self.counter <= self.depth:
             if self.verbose:
-                p = ' [*] GitHub Gist Search Search on page: ' + \
-                    str(self.Counter)
-                print helpers.color(p, firewall=True)
+                logger.info(f"GitHub Gist Search on page: {self.counter}")
             try:
-                # search?p=2&q=%40enron.com&ref=searchresults&utf8=✓
-                url = "https://gist.github.com/search?p=" + str(self.Counter) + "&q=%40" + \
-                    str(self.domain) + "+&ref=searchresults&utf8=✓"
-                r = dl.requesturl(url, useragent=self.UserAgent, raw=True, timeout=10)
-                if r.status_code != 200:
+                url = f"https://gist.github.com/search?p={self.counter}&q=%40{self.domain}+&ref=searchresults&utf8=✓"
+                response = dl.requesturl(url, useragent=self.user_agent, raw=True, timeout=10)
+                if response.status_code != 200:
                     break
             except Exception as e:
-                error = " [!] Major issue with GitHubGist Search:" + \
-                    str(e)
-                print helpers.color(error, warning=True)
-            RawHtml = r.content
-            # Parse the results for our URLS)
-            soup = BeautifulSoup(RawHtml)
-            for a in soup.findAll('a', href=True):
-                a = a['href']
-                if a.startswith('/'):
-                    UrlList.append(a)
-            self.Counter += 1
-        # Now take all gathered URL's and gather the HTML content needed
-        for url in UrlList:
+                logger.error(f"Major issue with GitHubGist Search: {e}")
+                break
+
+            raw_html = response.content
+            soup = BeautifulSoup(raw_html, 'lxml')
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                if href.startswith('/'):
+                    url_list.append(href)
+            self.counter += 1
+
+        for url in url_list:
             try:
-                url = "https://gist.github.com" + url
-                html = dl.requesturl(url, useragent=self.UserAgent, timeout=10)
-                self.Html += html
+                full_url = f"https://gist.github.com{url}"
+                html = dl.requesturl(full_url, useragent=self.user_agent, timeout=10)
+                self.html += html
             except Exception as e:
-                error = " [!] Connection Timed out on GithubGist Search:" + \
-                    str(e)
-                print helpers.color(error, warning=True)
+                logger.error(f"Connection Timed out on GitHubGist Search: {e}")
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Html)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parser = Parser.Parser(self.html)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
+        return final_output, html_results, json_results

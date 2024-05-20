@@ -1,120 +1,93 @@
-# !/usr/bin/env python
+#!/usr/bin/env python
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
 import configparser
 import requests
 import time
 import logging
-from Helpers import Download
-from Helpers import helpers
-from Helpers import Parser
+from Helpers import Download, helpers, Parser
 from bs4 import BeautifulSoup
 
 
-class ClassName(object):
-
-    def __init__(self, Domain, verbose=False):
+class ClassName:
+    def __init__(self, domain, verbose=False):
         self.apikey = False
         self.name = "PasteBin Search for Emails"
         self.description = "Uses pastebin to search for emails, parses them out of the"
+        self.domain = domain
+        self.verbose = verbose
+        self.logger = logging.getLogger("SimplyEmail.PasteBinSearch")
+        self.url_list = []
+        self.text = ""
+        self.load_config()
+
+    def load_config(self):
         config = configparser.ConfigParser()
         try:
-            self.logger = logging.getLogger("SimplyEmail.PasteBinSearch")
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
-            self.Quanity = int(config['GooglePasteBinSearch']['StartQuantity'])
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.Limit = int(config['GooglePasteBinSearch']['QueryLimit'])
-            self.Counter = int(config['GooglePasteBinSearch']['QueryStart'])
-            self.verbose = verbose
-            self.urlList = []
-            self.Text = ""
+            self.quantity = int(config['GooglePasteBinSearch']['StartQuantity'])
+            self.user_agent = {'User-Agent': helpers.get_user_agent()}
+            self.limit = int(config['GooglePasteBinSearch']['QueryLimit'])
+            self.counter = int(config['GooglePasteBinSearch']['QueryStart'])
         except Exception as e:
-            self.logger.critical(
-                'PasteBinSearch module failed to __init__: ' + str(e))
-            print helpers.color("[*] Major Settings for PasteBinSearch are missing, EXITING!\n", warning=True)
+            self.logger.critical(f'PasteBinSearch module failed to initialize: {e}')
+            print(helpers.color("[*] Major Settings for PasteBinSearch are missing, EXITING!\n", warning=True))
+            raise e
 
     def execute(self):
         self.logger.debug("PasteBinSearch started")
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def search(self):
         dl = Download.Download(self.verbose)
-        while self.Counter <= self.Limit and self.Counter <= 100:
+        while self.counter <= self.limit and self.counter <= 100:
             time.sleep(1)
             if self.verbose:
-                p = ' [*] Google Search for PasteBin on page: ' + \
-                    str(self.Counter)
-                self.logger.info(
-                    "GooglePasteBinSearch on page: " + str(self.Counter))
-                print helpers.color(p, firewall=True)
+                p = f' [*] Google Search for PasteBin on page: {self.counter}'
+                self.logger.info(f"GooglePasteBinSearch on page: {self.counter}")
+                print(helpers.color(p, firewall=True))
+            url = f"http://www.google.com/search?num={self.quantity}&start={self.counter}&hl=en&meta=&q=site:pastebin.com+%40{self.domain}"
             try:
-                url = "http://www.google.com/search?num=" + str(self.Quanity) + "&start=" + str(self.Counter) + \
-                      '&hl=en&meta=&q=site:pastebin.com+"%40' + \
-                    self.Domain + '"'
+                response = requests.get(url, headers=self.user_agent)
+                response.raise_for_status()
+                raw_html = response.content
+                dl.GoogleCaptchaDetection(raw_html)
+                soup = BeautifulSoup(raw_html, "lxml")
+                self.url_list.extend(a['href'] for a in soup.select('.r a') if "/u/" not in a['href'])
+            except requests.RequestException as e:
+                error = f" [!] Issue with Google Search for PasteBin: {e}"
+                self.logger.error(error)
+                print(helpers.color(error, warning=True))
             except Exception as e:
-                error = " [!] Major issue with Google Search for PasteBin:" + \
-                    str(e)
-                self.logger.error(
-                    "GooglePasteBinSearch could not create URL: " + str(e))
-                print helpers.color(error, warning=True)
+                error = f" [!] Fail during parsing result: {e}"
+                self.logger.error(f"PasteBinSearch Fail during parsing result: {e}")
+                print(helpers.color(error, warning=True))
+            self.counter += 100
+        self.gather_raw_content()
 
+    def gather_raw_content(self):
+        for url in self.url_list:
             try:
-                r = requests.get(url, headers=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to PasteBin (Check Connection):" + str(
-                    e)
-                self.logger.error(
-                    "Fail during Request to PasteBin (Check Connection): " + str(e))
-                print helpers.color(error, warning=True)
-            try:
-                RawHtml = r.content
-                try:
-                    # check for captcha in the source
-                    dl.GoogleCaptchaDetection(RawHtml)
-                except Exception as e:
-                    self.logger.error("Issue checking for captcha: " + str(e))
-                soup = BeautifulSoup(RawHtml, "lxml")
-                for a in soup.select('.r a'):
-                    # remove urls like pastebin.com/u/Anonymous
-                    if "/u/" not in str(a['href']):
-                        self.urlList.append(a['href'])
-            except Exception as e:
-                error = " [!] Fail during parsing result: " + str(e)
-                self.logger.error(
-                    "PasteBinSearch Fail during parsing result: " + str(e))
-                print helpers.color(error, warning=True)
-            self.Counter += 100
-        # Now take all gathered URL's and gather the Raw content needed
-        for Url in self.urlList:
-            try:
-                Url = "http://pastebin.com/raw/" + str(Url).split('/')[3]
-                data = requests.get(Url, timeout=2)
-                self.Text += data.content
-            except Exception as e:
-                error = "[!] Connection Timed out on PasteBin Search:" + str(e)
-                self.logger.error(
-                    "Connection Timed out on PasteBin raw download: " + str(e))
-                print helpers.color(error, warning=True)
-
+                raw_url = f"http://pastebin.com/raw/{url.split('/')[3]}"
+                data = requests.get(raw_url, timeout=2)
+                data.raise_for_status()
+                self.text += data.content.decode('utf-8')
+            except requests.RequestException as e:
+                error = f"[!] Connection Timed out on PasteBin Search: {e}"
+                self.logger.error(f"Connection Timed out on PasteBin raw download: {e}")
+                print(helpers.color(error, warning=True))
         if self.verbose:
             p = ' [*] Searching PasteBin Complete'
             self.logger.info("Searching PasteBin Complete")
-            print helpers.color(p, firewall=True)
+            print(helpers.color(p, firewall=True))
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Text)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
+        parser = Parser.Parser(self.text)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
         self.logger.debug("PasteBinSearch completed search")
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results

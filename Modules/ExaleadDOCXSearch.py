@@ -1,66 +1,54 @@
-# !/usr/bin/env python
+#!/usr/bin/env python
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
 import configparser
 import requests
 import time
 import logging
-from Helpers import Converter
-from Helpers import helpers
-from Helpers import Parser
-from Helpers import Download
+from Helpers import Converter, helpers, Parser, Download
 from bs4 import BeautifulSoup
 
-# import for "'ascii' codec can't decode byte" error
-import sys
-reload(sys)
-sys.setdefaultencoding("utf-8")
-# import for "'ascii' codec can't decode byte" error
 
-
-class ClassName(object):
+class ClassName:
 
     def __init__(self, Domain, verbose=False):
-        self.apikey = False
         self.name = "Exalead DOCX Search for Emails"
         self.description = "Uses Exalead Dorking to search DOCXs for emails"
+        self.Domain = Domain
+        self.verbose = verbose
+        self.urlList = []
+        self.Text = ""
+
+        self._setup_logger()
+        self._load_config()
+
+    def _setup_logger(self):
+        self.logger = logging.getLogger("SimplyEmail.ExaleadDOCXSearch")
+
+    def _load_config(self):
         config = configparser.ConfigParser()
         try:
-            self.logger = logging.getLogger("SimplyEmail.ExaleadDOCXSearch")
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
             self.Quanity = int(config['ExaleadDOCXSearch']['StartQuantity'])
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
+            self.UserAgent = {'User-Agent': helpers.get_user_agent()}
             self.Limit = int(config['ExaleadDOCXSearch']['QueryLimit'])
             self.Counter = int(config['ExaleadDOCXSearch']['QueryStart'])
-            self.verbose = verbose
-            self.urlList = []
-            self.Text = ""
         except Exception as e:
             self.logger.critical("ExaleadDOCXSearch module failed to __init__: " + str(e))
-            p = " [*] Major Settings for ExaleadDOCXSearch are missing, EXITING: " + e
-            print helpers.color(p, warning=True)
+            error_message = f" [*] Major Settings for ExaleadDOCXSearch are missing, EXITING: {e}"
+            print(helpers.color(error_message, warning=True))
 
     def execute(self):
         self.logger.debug("ExaleadDOCXSearch module started")
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        return self.get_emails()
 
     def download_file(self, url):
         local_filename = url.split('/')[-1]
-        # NOTE the stream=True parameter
         r = requests.get(url, stream=True)
         with open(local_filename, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024):
-                if chunk:  # filter out keep-alive new chunks
+                if chunk:
                     f.write(chunk)
-                    # f.flush() commented by recommendation from J.F.Sebastian
         return local_filename
 
     def search(self):
@@ -68,80 +56,75 @@ class ClassName(object):
         while self.Counter <= self.Limit:
             time.sleep(1)
             if self.verbose:
-                p = ' [*] Exalead Search on page: ' + str(self.Counter)
-                self.logger.info("ExaleadDOCXSearch on page: " + str(self.Counter))
-                print helpers.color(p, firewall=True)
-            try:
-                url = 'http://www.exalead.com/search/web/results/?q="%40' + self.Domain + \
-                      '"+filetype:docx&elements_per_page=' + \
-                    str(self.Quanity) + '&start_index=' + str(self.Counter)
-            except Exception as e:
-                self.logger.error("Issue building URL to search")
-                error = " [!] Major issue with Exalead DOCX Search: " + str(e)
-                print helpers.color(error, warning=True)
-            try:
-                r = requests.get(url, headers=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to Exalead (Check Connection):" + str(
-                    e)
-                print helpers.color(error, warning=True)
-            try:
-                RawHtml = r.content
-                # sometimes url is broken but exalead search results contain
-                # e-mail
-                self.Text += RawHtml
-                soup = BeautifulSoup(RawHtml, "lxml")
-                self.urlList = [h2.a["href"]
-                                for h2 in soup.findAll('h4', class_='media-heading')]
-            except Exception as e:
-                self.logger.error("Fail during parsing result: " + str(e))
-                error = " [!] Fail during parsing result: " + str(e)
-                print helpers.color(error, warning=True)
+                message = f' [*] Exalead Search on page: {self.Counter}'
+                self.logger.info(message)
+                print(helpers.color(message, firewall=True))
+            url = self._build_search_url()
+            self._perform_search(url)
             self.Counter += 30
+        self._download_files(convert)
 
-        # now download the required files
+    def _build_search_url(self):
         try:
-            for url in self.urlList:
-                if self.verbose:
-                    p = ' [*] Exalead DOCX search downloading: ' + str(url)
-                    self.logger.info("Starting download of DOCX: " + str(url))
-                    print helpers.color(p, firewall=True)
-                try:
-                    filetype = ".docx"
-                    dl = Download.Download(self.verbose)
-                    FileName, FileDownload = dl.download_file(url, filetype)
-                    if FileDownload:
-                        if self.verbose:
-                            self.logger.info("File was downloaded: " + str(url))
-                            p = ' [*] Exalead DOCX file was downloaded: ' + \
-                                str(url)
-                            print helpers.color(p, firewall=True)
-                        self.Text += convert.convert_docx_to_txt(FileName)
-                except Exception as e:
-                    self.logger.error("Issue with opening DOCX Files: " + str(e))
-                    error = " [!] Issue with opening DOCX Files:%s\n" % (str(e))
-                    print helpers.color(error, warning=True)
-                try:
-                    dl.delete_file(FileName)
-                except Exception as e:
-                    print e
+            url = (f'http://www.exalead.com/search/web/results/?q="%40{self.Domain}"+filetype:docx&'
+                   f'elements_per_page={self.Quanity}&start_index={self.Counter}')
+            return url
         except Exception as e:
-            p = " [*] No DOCX's to download from Exalead: " + e
-            self.logger.info("No DOCX's to download from Exalead: " + str(e))
-            print helpers.color(p, firewall=True)
+            self.logger.error("Issue building URL to search")
+            error_message = f" [!] Major issue with Exalead DOCX Search: {e}"
+            print(helpers.color(error_message, warning=True))
+
+    def _perform_search(self, url):
+        try:
+            r = requests.get(url, headers=self.UserAgent)
+            self._parse_search_results(r.content)
+        except Exception as e:
+            error_message = f" [!] Fail during Request to Exalead (Check Connection): {e}"
+            print(helpers.color(error_message, warning=True))
+
+    def _parse_search_results(self, raw_html):
+        try:
+            self.Text += raw_html
+            soup = BeautifulSoup(raw_html, "lxml")
+            self.urlList = [h2.a["href"] for h2 in soup.findAll('h4', class_='media-heading')]
+        except Exception as e:
+            self.logger.error("Fail during parsing result: " + str(e))
+            error_message = f" [!] Fail during parsing result: {e}"
+            print(helpers.color(error_message, warning=True))
+
+    def _download_files(self, convert):
+        for url in self.urlList:
+            if self.verbose:
+                message = f' [*] Exalead DOCX search downloading: {url}'
+                self.logger.info(message)
+                print(helpers.color(message, firewall=True))
+            try:
+                filetype = ".docx"
+                dl = Download.Download(self.verbose)
+                FileName, FileDownload = dl.download_file(url, filetype)
+                if FileDownload:
+                    if self.verbose:
+                        self.logger.info(f"File was downloaded: {url}")
+                        message = f' [*] Exalead DOCX file was downloaded: {url}'
+                        print(helpers.color(message, firewall=True))
+                    self.Text += convert.convert_docx_to_txt(FileName)
+                dl.delete_file(FileName)
+            except Exception as e:
+                self.logger.error("Issue with opening DOCX Files: " + str(e))
+                error_message = f" [!] Issue with opening DOCX Files: {e}"
+                print(helpers.color(error_message, warning=True))
 
         if self.verbose:
-
-            p = ' [*] Searching DOCX from Exalead Complete'
+            message = ' [*] Searching DOCX from Exalead Complete'
             self.logger.info("Searching DOCX from Exalead Complete")
-            print helpers.color(p, status=True)
+            print(helpers.color(message, status=True))
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Text)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
+        parser = Parser.Parser(self.Text)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
         self.logger.debug('ExaleadDOCXSearch completed search')
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results

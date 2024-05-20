@@ -5,115 +5,94 @@
 # 2) main name called "ClassName"
 # 3) execute function (calls everything it needs)
 # 4) places the findings into a queue
-import urlparse
+import urllib.parse as urlparse
 import configparser
 import time
-from Helpers import Download
-from Helpers import helpers
-from Helpers import Parser
-from BeautifulSoup import BeautifulSoup
+import logging
+from Helpers import Download, helpers, Parser
+from bs4 import BeautifulSoup
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-class ClassName(object):
-
-    def __init__(self, Domain, verbose=False):
-        self.apikey = False
+class GoogleCsvSearch:
+    def __init__(self, domain, verbose=False):
         self.name = "Google CSV Search for Emails"
         self.description = "Uses Google Dorking to search for emails"
+        self.domain = domain
+        self.verbose = verbose
+        self.url_list = []
+        self.text = ""
+        self.user_agent = {'User-Agent': helpers.get_user_agent()}
+
         config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
-            self.Quanity = int(config['GoogleCsvSearch']['StartQuantity'])
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.Limit = int(config['GoogleCsvSearch']['QueryLimit'])
-            self.Counter = int(config['GoogleCsvSearch']['QueryStart'])
-            self.Sleep = int(config['SleepConfig']['QuerySleep'])
-            self.Jitter = int(config['SleepConfig']['QueryJitter'])
-            self.verbose = verbose
-            self.urlList = []
-            self.Text = ""
-        except:
-            print helpers.color(" [*] Major Settings for GoogleCsvSearch are missing, EXITING!\n", warning=True)
+            self.quantity = int(config['GoogleCsvSearch']['StartQuantity'])
+            self.limit = int(config['GoogleCsvSearch']['QueryLimit'])
+            self.counter = int(config['GoogleCsvSearch']['QueryStart'])
+            self.sleep = int(config['SleepConfig']['QuerySleep'])
+            self.jitter = int(config['SleepConfig']['QueryJitter'])
+        except KeyError as e:
+            logger.error(f"Major settings for GoogleCsvSearch are missing: {e}")
+            raise SystemExit(f"Major settings for GoogleCsvSearch are missing: {e}")
 
     def execute(self):
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def search(self):
         dl = Download.Download(self.verbose)
-        while self.Counter <= self.Limit and self.Counter <= 100:
+        while self.counter <= self.limit and self.counter <= 100:
             time.sleep(1)
             if self.verbose:
-                p = ' [*] Google CSV Search on page: ' + str(self.Counter)
-                print helpers.color(p, firewall=True)
+                logger.info(f"Google CSV Search on page: {self.counter}")
             try:
-                url = "https://www.google.com/search?q=site:" + \
-                    self.Domain + "+filetype:csv&start=" + str(self.Counter)
+                url = f"https://www.google.com/search?q=site:{self.domain}+filetype:csv&start={self.counter}"
+                raw_html = dl.requesturl(url, useragent=self.user_agent)
+                dl.GoogleCaptchaDetection(raw_html)
+                soup = BeautifulSoup(raw_html, 'lxml')
+                for a in soup.find_all('a'):
+                    try:
+                        l = urlparse.parse_qs(urlparse.urlparse(a['href']).query)['q'][0]
+                        if l.startswith('http') or l.startswith('www'):
+                            if "webcache.googleusercontent.com" not in l:
+                                self.url_list.append(l)
+                    except KeyError:
+                        pass
             except Exception as e:
-                error = " [!] Major issue with Google Search:" + str(e)
-                print helpers.color(error, warning=True)
+                logger.error(f"Major issue with Google Search: {e}")
+                break
+            self.counter += 10
+            helpers.mod_sleep(self.sleep, jitter=self.jitter)
+
+        self.download_files(dl)
+
+    def download_files(self, dl):
+        for url in self.url_list:
+            if self.verbose:
+                logger.info(f"Google CSV search downloading: {url}")
             try:
-                RawHtml = dl.requesturl(url, useragent=self.UserAgent)
+                filetype = ".csv"
+                file_name, file_download = dl.download_file2(url, filetype)
+                if file_download:
+                    if self.verbose:
+                        logger.info(f"Google CSV file was downloaded: {url}")
+                    with open(file_name) as f:
+                        self.text += f.read()
+                dl.delete_file(file_name)
             except Exception as e:
-                error = " [!] Fail during Request to Google (Check Connection):" + \
-                    str(e)
-                print helpers.color(error, warning=True)
-            # check for captcha
-            try:
-                # Url = r.url
-                dl.GoogleCaptchaDetection(RawHtml)
-            except Exception as e:
-                print e
-            soup = BeautifulSoup(RawHtml)
-            # I use this to parse my results, for URLS to follow
-            for a in soup.findAll('a'):
-                try:
-                    # https://stackoverflow.com/questions/21934004/not-getting-proper-links-
-                    # from-google-search-results-using-mechanize-and-beautifu/22155412#22155412?
-                    # newreg=01f0ed80771f4dfaa269b15268b3f9a9
-                    l = urlparse.parse_qs(
-                        urlparse.urlparse(a['href']).query)['q'][0]
-                    if l.startswith('http') or l.startswith('www'):
-                        if "webcache.googleusercontent.com" not in l:
-                            self.urlList.append(l)
-                except:
-                    pass
-            self.Counter += 10
-            helpers.modsleep(self.Sleep, jitter=self.Jitter)
-        # now download the required files
-        try:
-            for url in self.urlList:
-                if self.verbose:
-                    p = ' [*] Google CSV search downloading: ' + str(url)
-                    print helpers.color(p, firewall=True)
-                try:
-                    filetype = ".csv"
-                    FileName, FileDownload = dl.download_file2(url, filetype)
-                    if FileDownload:
-                        if self.verbose:
-                            p = '[*] Google CSV file was downloaded: ' + \
-                                str(url)
-                            print helpers.color(p, firewall=True)
-                        with open(FileName) as f:
-                            self.Text += f.read()
-                    # print self.Text
-                except Exception as e:
-                    print helpers.color(" [!] Issue with opening CSV Files\n", firewall=True)
-                try:
-                    dl.delete_file(FileName)
-                except Exception as e:
-                    print e
-        except:
-            print helpers.color(" [*] No CSV to download from Google!\n", firewall=True)
+                logger.error(f"Issue with opening CSV Files: {e}")
+        if not self.url_list:
+            logger.info("No CSV to download from Google!")
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Text)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parser = Parser.Parser(self.text)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
+        return final_output, html_results, json_results

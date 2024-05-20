@@ -1,77 +1,72 @@
 #!/usr/bin/env python
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
 import configparser
 import time
-from Helpers import helpers
-from Helpers import Parser
-from Helpers import Download
+import logging
+from Helpers.helpers import get_user_agent, mod_sleep
+from Helpers.Parser import Parser
+from Helpers.Download import Download
 
 
 class ClassName(object):
 
-    def __init__(self, Domain, verbose=False):
+    def __init__(self, domain, verbose=False):
         self.apikey = False
         self.name = "Google Search for Emails"
-        self.description = "Uses Google to search for emails, parses them out of the"
+        self.description = "Uses Google to search for emails, parses them out of the results"
+        self.verbose = verbose
+
+        self._load_config()
+        self.domain = domain
+        self.html = ""
+
+    def _load_config(self):
         config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
-            self.Quanity = int(config['GoogleSearch']['StartQuantity'])
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.Limit = int(config['GoogleSearch']['QueryLimit'])
-            self.Counter = int(config['GoogleSearch']['QueryStart'])
-            self.Sleep = int(config['SleepConfig']['QuerySleep'])
-            self.Jitter = int(config['SleepConfig']['QueryJitter'])
-            self.verbose = verbose
-            self.Html = ""
-        except:
-            print helpers.color(" [*] Major Settings for GoogleSearch are missing, EXITING!\n", warning=True)
+            self.quantity = int(config['GoogleSearch']['StartQuantity'])
+            self.user_agent = {'User-Agent': get_user_agent()}
+            self.limit = int(config['GoogleSearch']['QueryLimit'])
+            self.counter = int(config['GoogleSearch']['QueryStart'])
+            self.sleep = int(config['SleepConfig']['QuerySleep'])
+            self.jitter = int(config['SleepConfig']['QueryJitter'])
+        except KeyError as e:
+            logging.error("Missing config setting: %s", e)
+            raise
 
     def execute(self):
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def search(self):
-        dl = Download.Download(self.verbose)
-        while self.Counter <= self.Limit and self.Counter <= 1000:
+        dl = Download(self.verbose)
+        while self.counter <= self.limit and self.counter <= 1000:
             time.sleep(1)
             if self.verbose:
-                p = ' [*] Google Search on page: ' + str(self.Counter)
-                print helpers.color(p, firewall=True)
+                logging.info('Google Search on page: %d', self.counter)
+
+            url = f"http://www.google.com/search?num={self.quantity}&start={self.counter}&hl=en&meta=&q=%40\"{self.domain}\""
             try:
-                url = "http://www.google.com/search?num=" + str(self.Quanity) + "&start=" + \
-                    str(self.Counter) + "&hl=en&meta=&q=%40\"" + \
-                    self.Domain + "\""
+                results = dl.requesturl(url, useragent=self.user_agent)
             except Exception as e:
-                error = " [!] Major issue with Google Search:" + str(e)
-                print helpers.color(error, warning=True)
+                logging.error("Fail during request to Google: %s", e)
+                continue
+
             try:
-                results = dl.requesturl(url, useragent=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to Google (Check Connection):" + \
-                    str(e)
-                print helpers.color(error, warning=True)
-            try:
-                # Url = r.url
                 dl.GoogleCaptchaDetection(results)
             except Exception as e:
-                print e
-            self.Html += results
-            self.Counter += 100
-            helpers.modsleep(self.Sleep, jitter=self.Jitter)
+                logging.warning("Captcha detection issue: %s", e)
+
+            self.html += results
+            self.counter += 100
+            mod_sleep(self.sleep, jitter=self.jitter)
+
     def get_emails(self):
-        Parse = Parser.Parser(self.Html)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parse = Parser(self.html)
+        parse.generic_clean()
+        parse.url_clean()
+        final_output = parse.grep_find_emails()
+        html_results = parse.build_results(final_output, self.name)
+        json_results = parse.build_json(final_output, self.name)
+        return final_output, html_results, json_results

@@ -1,113 +1,103 @@
-# !/usr/bin/env python
+#!/usr/bin/env python
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
 import configparser
 import requests
 import time
-from Helpers import Converter
-from Helpers import helpers
-from Helpers import Parser
-from Helpers import Download
+from Helpers import Converter, helpers, Parser, Download
 from bs4 import BeautifulSoup
 
 
-class ClassName(object):
+class ClassName:
 
     def __init__(self, Domain, verbose=False):
-        self.apikey = False
         self.name = "Exalead PDF Search for Emails"
         self.description = "Uses Exalead Dorking to search PDFs for emails"
+        self.Domain = Domain
+        self.verbose = verbose
+        self.urlList = []
+        self.Text = ""
+
+        self._load_config()
+
+    def _load_config(self):
         config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
             self.Quanity = int(config['ExaleadPDFSearch']['StartQuantity'])
             self.Limit = int(config['ExaleadPDFSearch']['QueryLimit'])
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
+            self.UserAgent = {'User-Agent': helpers.get_user_agent()}
             self.Counter = int(config['ExaleadPDFSearch']['QueryStart'])
-            self.verbose = verbose
-            self.urlList = []
-            self.Text = ""
-        except:
-            print helpers.color(" [*] Major Settings for ExaleadPDFSearch are missing, EXITING!\n", warning=True)
+        except Exception as e:
+            print(helpers.color(f" [*] Major Settings for ExaleadPDFSearch are missing, EXITING! {e}", warning=True))
 
     def execute(self):
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        return self.get_emails()
 
     def search(self):
         convert = Converter.Converter(verbose=self.verbose)
         while self.Counter <= self.Limit and self.Counter <= 10:
             time.sleep(1)
             if self.verbose:
-                p = ' [*] Exalead Search on page: ' + str(self.Counter)
-                print helpers.color(p, firewall=True)
-            try:
-                url = 'http://www.exalead.com/search/web/results/?q="%40' + self.Domain + \
-                      '"+filetype:pdf&elements_per_page=' + \
-                    str(self.Quanity) + '&start_index=' + str(self.Counter)
-            except Exception as e:
-                error = " [!] Major issue with Exalead PDF Search: " + str(e)
-                print helpers.color(error, warning=True)
-            try:
-                r = requests.get(url, headers=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to Exalead (Check Connection):" + str(
-                    e)
-                print helpers.color(error, warning=True)
-            try:
-                RawHtml = r.content
-                # sometimes url is broken but exalead search results contain
-                # e-mail
-                self.Text += RawHtml
-                soup = BeautifulSoup(RawHtml, "lxml")
-                self.urlList = [h2.a["href"]
-                                for h2 in soup.findAll('h4', class_='media-heading')]
-            except Exception as e:
-                error = " [!] Fail during parsing result: " + str(e)
-                print helpers.color(error, warning=True)
+                message = f' [*] Exalead Search on page: {self.Counter}'
+                print(helpers.color(message, firewall=True))
+            url = self._build_search_url()
+            self._perform_search(url)
             self.Counter += 30
+        self._download_files(convert)
 
-        # now download the required files
+    def _build_search_url(self):
         try:
-            for url in self.urlList:
-                if self.verbose:
-                    p = ' [*] Exalead PDF search downloading: ' + str(url)
-                    print helpers.color(p, firewall=True)
-                try:
-                    filetype = ".pdf"
-                    dl = Download.Download(self.verbose)
-                    FileName, FileDownload = dl.download_file(url, filetype)
-                    if FileDownload:
-                        if self.verbose:
-                            p = ' [*] Exalead PDF file was downloaded: ' + \
-                                str(url)
-                            print helpers.color(p, firewall=True)
-                        self.Text += convert.convert_pdf_to_txt(FileName)
-                except Exception as e:
-                    pass
-                try:
-                    dl.delete_file(FileName)
-                except Exception as e:
-                    print e
-        except:
-            print helpers.color(" [*] No PDF's to download from Exalead!\n", firewall=True)
+            url = (f'http://www.exalead.com/search/web/results/?q="%40{self.Domain}"+filetype:pdf&'
+                   f'elements_per_page={self.Quanity}&start_index={self.Counter}')
+            return url
+        except Exception as e:
+            error_message = f" [!] Major issue with Exalead PDF Search: {e}"
+            print(helpers.color(error_message, warning=True))
+
+    def _perform_search(self, url):
+        try:
+            r = requests.get(url, headers=self.UserAgent)
+            self._parse_search_results(r.content)
+        except Exception as e:
+            error_message = f" [!] Fail during Request to Exalead (Check Connection): {e}"
+            print(helpers.color(error_message, warning=True))
+
+    def _parse_search_results(self, raw_html):
+        try:
+            self.Text += raw_html
+            soup = BeautifulSoup(raw_html, "lxml")
+            self.urlList = [h2.a["href"] for h2 in soup.findAll('h4', class_='media-heading')]
+        except Exception as e:
+            error_message = f" [!] Fail during parsing result: {e}"
+            print(helpers.color(error_message, warning=True))
+
+    def _download_files(self, convert):
+        for url in self.urlList:
+            if self.verbose:
+                message = f' [*] Exalead PDF search downloading: {url}'
+                print(helpers.color(message, firewall=True))
+            try:
+                dl = Download.Download(self.verbose)
+                FileName, FileDownload = dl.download_file(url, ".pdf")
+                if FileDownload:
+                    if self.verbose:
+                        message = f' [*] Exalead PDF file was downloaded: {url}'
+                        print(helpers.color(message, firewall=True))
+                    self.Text += convert.convert_pdf_to_txt(FileName)
+                dl.delete_file(FileName)
+            except Exception as e:
+                print(e)
 
         if self.verbose:
-            p = ' [*] Searching PDF from Exalead Complete'
-            print helpers.color(p, status=True)
+            message = ' [*] Searching PDF from Exalead Complete'
+            print(helpers.color(message, status=True))
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Text)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parser = Parser.Parser(self.Text)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
+        return final_output, html_results, json_results

@@ -1,57 +1,51 @@
 #!/usr/bin/env python
+
 import configparser
 from Helpers import Download
 from Helpers import Parser
 from Helpers import helpers
+import logging
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-
-class ClassName(object):
-
+class FlickrSearch:
     def __init__(self, domain, verbose=False):
-        self.apikey = False
         self.name = "Searching Flickr"
-        self.description = "Search the Flickr top relvant results for emails"
+        self.description = "Search the Flickr top relevant results for emails"
         self.domain = domain
-        config = configparser.ConfigParser()
-        self.results = ""
         self.verbose = verbose
+        self.results = ""
+        self.user_agent = {'User-Agent': helpers.get_user_agent()}
+
+        config = configparser.ConfigParser()
         try:
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
             config.read('Common/SimplyEmail.ini')
-            self.HostName = str(config['FlickrSearch']['Hostname'])
-        except:
-            print helpers.color(" [*] Major Settings for FlickrSearch are missing, EXITING!\n", warning=True)
+            self.hostname = str(config['FlickrSearch']['Hostname'])
+        except KeyError as e:
+            logger.error(f"Major settings for FlickrSearch are missing: {e}")
+            raise SystemExit(f"Major settings for FlickrSearch are missing: {e}")
 
     def execute(self):
         self.process()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def process(self):
         dl = Download.Download(verbose=self.verbose)
         try:
-            url = "https://www.flickr.com/search/?text=%40" + self.domain
-            rawhtml = dl.requesturl(url, useragent=self.UserAgent)
+            url = f"https://www.flickr.com/search/?text=%40{self.domain}"
+            raw_html = dl.requesturl(url, useragent=self.user_agent)
+            self.results += raw_html
         except Exception as e:
-            error = " [!] Major issue with Flickr Search:" + str(e)
-            print helpers.color(error, warning=True)
-        self.results += rawhtml
+            logger.error(f"Major issue with Flickr Search: {e}")
+
         if self.verbose:
-            p = ' [*] FlickrSearch has completed'
-            print helpers.color(p, firewall=True)
-        # https://www.flickr.com/search/?text=%40microsoft.com
-        # is an example of a complete request for "@microsoft.com"
+            logger.info("FlickrSearch has completed")
 
     def get_emails(self):
-        Parse = Parser.Parser(self.results)
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parser = Parser.Parser(self.results)
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
+        return final_output, html_results, json_results

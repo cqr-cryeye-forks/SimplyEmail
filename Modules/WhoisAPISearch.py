@@ -1,64 +1,53 @@
-# http://api.hackertarget.com/whois/?q=verisgroup.com
-# !/usr/bin/env python
+#!/usr/bin/env python
 
 import requests
 import configparser
 import logging
-from Helpers import Parser
-from Helpers import helpers
-
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
+from Helpers import Parser, helpers
 
 
-class ClassName(object):
-
+class WhoisAPISearch:
     def __init__(self, domain, verbose=False):
-        self.apikey = False
         self.name = "Searching Whois"
         self.description = "Search the Whois database for potential POC emails"
         self.domain = domain
-        config = configparser.ConfigParser()
         self.verbose = verbose
         self.results = ""
+
+        config = configparser.ConfigParser()
+        self.logger = logging.getLogger("SimplyEmail.WhoisAPISearch")
         try:
-            self.logger = logging.getLogger("SimplyEmail.WhoisAPISearch")
             config.read('Common/SimplyEmail.ini')
-            self.UserAgent = str(config['GlobalSettings']['UserAgent'])
-        except Exception as e:
-            self.logger.critical(
-                'WhoisAPISearch module failed to __init__: ' + str(e))
-            print helpers.color(" [*] Major Settings for Search Whois are missing, EXITING!\n", warning=True)
+            self.user_agent = config['GlobalSettings']['UserAgent']
+        except KeyError as e:
+            self.logger.critical(f'WhoisAPISearch module failed to __init__: {e}')
+            print(helpers.color(" [*] Major Settings for Search Whois are missing, EXITING!\n", warning=True))
 
     def execute(self):
         self.logger.debug("WhoisAPISearch Started")
         self.process()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def process(self):
         try:
             if self.verbose:
-                p = ' [*] Requesting API on HackerTarget whois'
+                msg = ' [*] Requesting API on HackerTarget whois'
                 self.logger.info("Requesting API on HackerTarget whois")
-                print helpers.color(p, firewall=True)
-            url = "http://api.hackertarget.com/whois/?q=" + \
-                self.domain
-            r = requests.get(url)
-        except Exception as e:
-            error = " [!] Major issue with Whois Search:" + str(e)
-            self.logger.error(
-                "Failed to request URL (Check Connection): " + str(e))
-            print helpers.color(error, warning=True)
-        self.results = r.content
+                print(helpers.color(msg, firewall=True))
+            url = f"http://api.hackertarget.com/whois/?q={self.domain}"
+            response = requests.get(url)
+            response.raise_for_status()
+            self.results = response.content
+        except requests.RequestException as e:
+            error_msg = f" [!] Major issue with Whois Search: {e}"
+            self.logger.error(f"Failed to request URL (Check Connection): {e}")
+            print(helpers.color(error_msg, warning=True))
 
     def get_emails(self):
-        Parse = Parser.Parser(self.results)
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
+        parser = Parser.Parser(self.results)
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
         self.logger.debug('WhoisAPISearch completed search')
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results

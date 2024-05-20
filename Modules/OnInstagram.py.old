@@ -2,58 +2,51 @@
 
 import requests
 import configparser
-from Helpers import helpers
-from Helpers import Parser
+from Helpers import helpers, Parser
 
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
-
-# http://www.oninstagram.com/profile/search?query=@gmail.com
-# this allows raw query, even major like @gmail
-
-class ClassName(object):
-
-    def __init__(self, Domain, verbose=False):
+class ClassName:
+    def __init__(self, domain, verbose=False):
         self.apikey = False
         self.name = "OnInstagram Search For Instagram Users"
-        self.description = "Uses OnInstagrams search engine"
+        self.description = "Uses OnInstagram's search engine"
+        self.domain = domain
+        self.html = ""
+        self.verbose = verbose
+        self.config = self.load_config()
+
+    def load_config(self):
         config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
-            self.Html = ""
-            self.verbose = verbose
-        except:
-            print helpers.color(" [*] Major Settings for OnInstagram are missing, EXITING!\n", warning=True)
+            return config
+        except Exception as e:
+            error = " [*] Major Settings for OnInstagram are missing, EXITING!\n"
+            print(helpers.color(error, warning=True))
+            raise e
 
     def execute(self):
         self.process()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def process(self):
+        url = f"http://www.oninstagram.com/profile/search?query={self.domain}"
         try:
-            # page seems to dynamicaly expand :)
-            url = "http://www.oninstagram.com/profile/search?query=" + \
-                self.Domain
-            r = requests.get(url)
-        except Exception as e:
-            error = " [!] Major issue with OnInstagram Search:" + str(e)
-            print helpers.color(error, warning=True)
-        if self.verbose:
-            p = ' [*] Instagram search Complete'
-            print helpers.color(p, firewall=True)
-        self.Html = r.content
+            response = requests.get(url)
+            response.raise_for_status()
+            self.html = response.content
+            if self.verbose:
+                print(helpers.color(' [*] Instagram search complete', firewall=True))
+        except requests.RequestException as e:
+            error = f" [!] Major issue with OnInstagram Search: {e}"
+            print(helpers.color(error, warning=True))
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Html)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parser = Parser.Parser(self.html)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
+        return final_output, html_results, json_results

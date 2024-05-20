@@ -1,10 +1,5 @@
-# !/usr/bin/env python
+#!/usr/bin/env python
 
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
 import requests
 import configparser
 import time
@@ -13,108 +8,89 @@ from Helpers import helpers
 from Helpers import Parser
 from Helpers import Converter
 from bs4 import BeautifulSoup
+import logging
 
-# import for "'ascii' codec can't decode byte" error
-import sys
-reload(sys)
-sys.setdefaultencoding("utf-8")
-# import for "'ascii' codec can't decode byte" error
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-class ClassName(object):
-
-    def __init__(self, Domain, verbose=False):
-        self.apikey = False
+class ExaleadXLSXSearch:
+    def __init__(self, domain, verbose=False):
         self.name = "Exalead XLSX Search for Emails"
         self.description = "Uses Exalead Dorking to search XLSXs for emails"
+        self.domain = domain
+        self.verbose = verbose
+        self.url_list = []
+        self.text = ""
+
         config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
-            self.Domain = Domain
-            self.Quanity = int(config['ExaleadXLSXSearch']['StartQuantity'])
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.Limit = int(config['ExaleadXLSXSearch']['QueryLimit'])
-            self.Counter = int(config['ExaleadXLSXSearch']['QueryStart'])
-            self.verbose = verbose
-            self.urlList = []
-            self.Text = ""
-        except:
-            print helpers.color(" [*] Major Settings for ExaleadXLSXSearch are missing, EXITING!\n", warning=True)
+            self.quantity = int(config['ExaleadXLSXSearch']['StartQuantity'])
+            self.user_agent = {'User-Agent': helpers.get_user_agent()}
+            self.limit = int(config['ExaleadXLSXSearch']['QueryLimit'])
+            self.counter = int(config['ExaleadXLSXSearch']['QueryStart'])
+        except KeyError as e:
+            logger.error(f"Major settings for ExaleadXLSXSearch are missing: {e}")
+            raise SystemExit(f"Major settings for ExaleadXLSXSearch are missing: {e}")
 
     def execute(self):
         self.search()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def search(self):
         dl = Download.Download(verbose=self.verbose)
         convert = Converter.Converter(verbose=self.verbose)
-        while self.Counter <= self.Limit:
+        while self.counter <= self.limit:
             time.sleep(1)
             if self.verbose:
-                p = ' [*] Exalead XLSX Search on page: ' + str(self.Counter)
-                print helpers.color(p, firewall=True)
-            try:
-                url = 'http://www.exalead.com/search/web/results/?q="%40' + self.Domain + \
-                      '"+filetype:xlsx&elements_per_page=' + \
-                    str(self.Quanity) + '&start_index=' + str(self.Counter)
-            except Exception as e:
-                error = " [!] Major issue with Exalead XLSX Search:" + str(e)
-                print helpers.color(error, warning=True)
-            try:
-                r = requests.get(url, headers=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to Exalead (Check Connection):" + str(
-                    e)
-                print helpers.color(error, warning=True)
-            try:
-                RawHtml = r.content
-                # sometimes url is broken but exalead search results contain
-                # e-mail
-                self.Text += RawHtml
-                soup = BeautifulSoup(RawHtml, "lxml")
-                self.urlList = [h4.a["href"]
-                                for h4 in soup.findAll('h4', class_='media-heading')]
-            except Exception as e:
-                error = " [!] Fail during parsing result: " + str(e)
-                print helpers.color(error, warning=True)
-            self.Counter += 30
+                logger.info(f"Exalead XLSX Search on page: {self.counter}")
 
-        # now download the required files
+            url = (f'http://www.exalead.com/search/web/results/?q="%40{self.domain}"+filetype:xlsx'
+                   f'&elements_per_page={self.quantity}&start_index={self.counter}')
+            try:
+                response = requests.get(url, headers=self.user_agent)
+                response.raise_for_status()
+                raw_html = response.content
+                self.text += raw_html
+                soup = BeautifulSoup(raw_html, "lxml")
+                self.url_list.extend(h4.a["href"] for h4 in soup.find_all('h4', class_='media-heading'))
+            except requests.RequestException as e:
+                logger.error(f"Fail during request to Exalead: {e}")
+            except Exception as e:
+                logger.error(f"Fail during parsing result: {e}")
+
+            self.counter += 30
+
         try:
-            for url in self.urlList:
+            for url in self.url_list:
                 if self.verbose:
-                    p = ' [*] Exalead XLSX search downloading: ' + str(url)
-                    print helpers.color(p, firewall=True)
+                    logger.info(f"Exalead XLSX search downloading: {url}")
                 try:
                     filetype = ".xlsx"
-                    FileName, FileDownload = dl.download_file(url, filetype)
-                    if FileDownload:
+                    file_name, file_download = dl.download_file(url, filetype)
+                    if file_download:
                         if self.verbose:
-                            p = ' [*] Exalead XLSX file was downloaded: ' + \
-                                str(url)
-                            print helpers.color(p, firewall=True)
-                        self.Text += convert.convert_Xlsx_to_Csv(FileName)
+                            logger.info(f"Exalead XLSX file was downloaded: {url}")
+                        self.text += convert.convert_xlsx_to_csv(file_name)
                 except Exception as e:
-                    error = " [!] Issue with opening Xlsx Files:%s\n" % (str(e))
-                    print helpers.color(error, warning=True)
+                    logger.error(f"Issue with opening XLSX files: {e}")
                 try:
-                    dl.delete_file(FileName)
+                    dl.delete_file(file_name)
                 except Exception as e:
-                    print e
-        except:
-            print helpers.color("[*] No XLSX's to download from Exalead!\n", firewall=True)
+                    logger.error(f"Error deleting file: {e}")
+        except Exception as e:
+            logger.error(f"No XLSXs to download from Exalead: {e}")
 
         if self.verbose:
-            p = ' [*] Searching XLSX from Exalead Complete'
-            print helpers.color(p, status=True)
+            logger.info("Searching XLSX from Exalead Complete")
 
     def get_emails(self):
-        Parse = Parser.Parser(self.Text)
-        Parse.genericClean()
-        Parse.urlClean()
-        FinalOutput = Parse.GrepFindEmails()
-        HtmlResults = Parse.BuildResults(FinalOutput, self.name)
-        JsonResults = Parse.BuildJson(FinalOutput, self.name)
-        return FinalOutput, HtmlResults, JsonResults
+        parser = Parser.Parser(self.text)
+        parser.generic_clean()
+        parser.url_clean()
+        final_output = parser.grep_find_emails()
+        html_results = parser.build_results(final_output, self.name)
+        json_results = parser.build_json(final_output, self.name)
+        return final_output, html_results, json_results
