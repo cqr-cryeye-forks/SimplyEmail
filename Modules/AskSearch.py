@@ -1,79 +1,82 @@
 #!/usr/bin/env python
-# Port from theHarvester! Shout out to him for the code:
-# https://github.com/laramies/theHarvester/blob/master/discovery/asksearch.py
 import configparser
 import logging
-from Helpers import Download
-from Helpers import Parser
-from Helpers import helpers
-
-# Class will have the following properties:
-# 1) name / description
-# 2) main name called "ClassName"
-# 3) execute function (calls everything it needs)
-# 4) places the findings into a queue
+from Helpers import Download, Parser, helpers
 
 
-class ClassName(object):
+class AskSearch:
 
-    def __init__(self, Domain, verbose=False):
-        self.apikey = False
+    def __init__(self, domain, verbose=False):
         self.logger = logging.getLogger("SimplyEmail.AskSearch")
         self.name = "Ask Search for Emails"
         self.description = "Simple Ask Search for Emails"
+        self.verbose = verbose
+        self.domain = domain
+        self.html = ""
+        self.counter = 0
+
+        self._load_config()
+
+    def _load_config(self):
+        """
+        Загружает конфигурационный файл и устанавливает необходимые параметры.
+        """
         config = configparser.ConfigParser()
         try:
             config.read('Common/SimplyEmail.ini')
-            self.UserAgent = {
-                'User-Agent': helpers.getua()}
-            self.PageLimit = int(config['AskSearch']['QueryPageLimit'])
-            self.Counter = int(config['AskSearch']['QueryStart'])
-            self.Sleep = int(config['SleepConfig']['QuerySleep'])
-            self.Jitter = int(config['SleepConfig']['QueryJitter'])
-            self.Domain = Domain
-            self.verbose = verbose
-            self.Html = ""
+            self.user_agent = {'User-Agent': helpers.get_user_agent()}
+            self.page_limit = config['AskSearch'].getint('QueryPageLimit', 10)
+            self.counter = config['AskSearch'].getint('QueryStart', 1)
+            self.sleep = config['SleepConfig'].getint('QuerySleep', 1)
+            self.jitter = config['SleepConfig'].getint('QueryJitter', 1)
         except Exception as e:
-            self.logger.critical(
-                'AskSearch module failed to load: ' + str(e))
-            print helpers.color("[*] Major Settings for Ask Search are missing, EXITING!\n", warning=True)
+            self.logger.critical(f'AskSearch module failed to load: {e}')
+            print(helpers.color("[*] Major Settings for Ask Search are missing, EXITING!\n", warning=True))
 
     def execute(self):
+        """
+        Выполняет процесс поиска и извлечения email адресов.
+        """
         self.logger.debug("AskSearch module started")
         self.process()
-        FinalOutput, HtmlResults, JsonResults = self.get_emails()
-        return FinalOutput, HtmlResults, JsonResults
+        final_output, html_results, json_results = self.get_emails()
+        return final_output, html_results, json_results
 
     def process(self):
+        """
+        Выполняет запросы к поисковой системе Ask для извлечения HTML.
+        """
         dl = Download.Download(self.verbose)
-        while self.Counter <= self.PageLimit:
+        while self.counter <= self.page_limit:
             if self.verbose:
-                p = ' [*] AskSearch on page: ' + str(self.Counter)
-                print helpers.color(p, firewall=True)
-                self.logger.info('AskSearch on page: ' + str(self.Counter))
-            try:
-                url = 'http://www.ask.com/web?q=@' + str(self.Domain) + \
-                    '&pu=10&page=' + str(self.Counter)
-            except Exception as e:
-                error = " [!] Major issue with Ask Search:" + str(e)
-                self.logger.error('Major issue with Ask Search: ' + str(e))
-                print helpers.color(error, warning=True)
-            try:
-                rawhtml = dl.requesturl(url, useragent=self.UserAgent)
-            except Exception as e:
-                error = " [!] Fail during Request to Ask (Check Connection):" + \
-                    str(e)
-                self.logger.error(
-                    'Fail during Request to Ask (Check Connection): ' + str(e))
-                print helpers.color(error, warning=True)
-            self.Html += rawhtml
-            self.Counter += 1
-            helpers.modsleep(self.Sleep, jitter=self.Jitter)
+                message = f' [*] AskSearch on page: {self.counter}'
+                print(helpers.color(message, firewall=True))
+                self.logger.info(message)
 
+            url = f'http://www.ask.com/web?q=@{self.domain}&pu=10&page={self.counter}'
+            try:
+                raw_html = dl.requesturl(url, useragent=self.user_agent)
+                self.html += raw_html
+                self.counter += 1
+                helpers.mod_sleep(self.sleep, jitter=self.jitter)
+            except Exception as e:
+                error = f" [!] Fail during Request to Ask (Check Connection): {e}"
+                self.logger.error(error)
+                print(helpers.color(error, warning=True))
 
     def get_emails(self):
-        parse = Parser.Parser(self.Html)
-        FinalOutput, HtmlResults = parse.extendedclean(self.name)
-        JsonResults = parse.BuildJson(FinalOutput, self.name)
+        """
+        Извлекает email адреса из HTML с помощью парсера.
+        """
+        parser = Parser.Parser(self.html)
+        final_output, html_results = parser.extended_clean(self.name)
+        json_results = parser.build_json(final_output, self.name)
         self.logger.debug('AskSearch completed search')
-        return FinalOutput, HtmlResults, JsonResults
+        return final_output, html_results, json_results
+
+
+# Пример использования
+if __name__ == "__main__":
+    ask_search = AskSearch("example.com", verbose=True)
+    results = ask_search.execute()
+    print(results)
