@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import requests
 import configparser
-import helpers
+from Helpers import helpers
 import logging
 
 

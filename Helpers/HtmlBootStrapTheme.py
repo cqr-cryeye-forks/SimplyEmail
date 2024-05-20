@@ -114,7 +114,7 @@ function AnchorJS(a){"use strict";this.options=a||{},this._applyRemainingDefault
             )
             self.html = alert + self.html
 
-        self.html += "</tbody></table></div>"
+        self.html += BottomHtml
 
     def output_html(self, path):
         try:

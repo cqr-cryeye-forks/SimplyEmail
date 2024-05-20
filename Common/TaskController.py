@@ -11,6 +11,7 @@ import time
 import subprocess
 import logging
 import datetime
+from typing import Any
 
 # Internal modules
 from Helpers import helpers
@@ -69,7 +70,7 @@ class Conducter:
             self.logger.info("_execute_api_module: no API key present")
             return False
 
-    def _execute_get_task(self, task_queue) -> str:
+    def _execute_get_task(self, task_queue) -> Any | None:
         try:
             task = task_queue.get()
             self.logger.debug("_execute_get_task: process requested tasking")
@@ -181,12 +182,12 @@ class Conducter:
         self.logger.debug("HTML Printer started")
         buildpath = f"{Domain}-{self.TimeDate}"
         Html = HtmlBootStrapTheme.HtmlBuilder(HtmlFinalEmailList, Domain)
-        Html.BuildHtml()
-        Html.OutPutHTML(buildpath)
+        Html.build_html()
+        Html.output_html(buildpath)
 
     def JsonPrinter(self, JsonFinalEmailList, FullPath, Domain):
         self.logger.debug("Json Printer started")
-        json_data = helpers.JsonListToJsonObj(JsonFinalEmailList, Domain)
+        json_data = helpers.json_list_to_json_obj(JsonFinalEmailList, Domain)
         if json_data:
             self.logger.debug(f"JSON wrote file: {FullPath}")
             with open(FullPath, 'w') as file:
@@ -393,7 +394,7 @@ class Conducter:
                 val = self.VerifyScreen()
                 if val:
                     email = VerifyEmails.VerifyEmail(FinalEmailList, BuiltNames, domain)
-                    VerifiedList = email.ExecuteVerify()
+                    VerifiedList = email.execute_verify()
                     if VerifiedList:
                         self.printer(FinalEmailList, domain, VerifyEmail=Verify)
         except Exception as e:
@@ -493,7 +494,7 @@ class Conducter:
                 val = self.VerifyScreen()
                 if val:
                     email = VerifyEmails.VerifyEmail(FinalEmailList, BuiltNames, domain)
-                    VerifiedList = email.ExecuteVerify()
+                    VerifiedList = email.execute_verify()
                     if VerifiedList:
                         self.printer(FinalEmailList, domain, VerifyEmail=Verify)
         except Exception as e:
@@ -516,14 +517,14 @@ class Conducter:
 
         self.logger.debug("Starting LinkedInScraper for names")
         Li = LinkedinNames.LinkedinScraper(domain, Verbose=Verbose)
-        LNames = Li.LinkedInNames()
+        LNames = Li.linked_in_names()
         if LNames:
             e = f' [*] LinkedinScraper has Gathered: {len(LNames)} Names'
             print(helpers.color(e, status=True))
             self.logger.info(f"LinkedInScraper has Gathered: {len(LNames)}")
             for raw in LNames:
                 try:
-                    name = Li.LinkedInClean(raw)
+                    name = Li.linked_in_clean(raw)
                     if name:
                         CleanNames.append(name)
                 except Exception as e:
@@ -531,7 +532,7 @@ class Conducter:
                     self.logger.error(f"Issue cleaning LinkedInNames: {e}")
 
         c6 = Connect6.Connect6Scraper(domain, Verbose=Verbose)
-        urllist = c6.Connect6AutoUrl()
+        urllist = c6.connect6_auto_url()
         self.title()
         print(helpers.color(" [*] Now Starting Connect6 Scrape:"))
         self.logger.info("Now starting Connect6 scrape")
@@ -544,12 +545,12 @@ class Conducter:
             Question = " [>] Is this URL correct?: "
             Answer = input(helpers.color(Question, bold=False))
             if Answer.upper() in "YES":
-                Names = c6.Connect6Download(urllist[0])
+                Names = c6.connect6_download(urllist[0])
                 if Names:
                     e = f' [*] Connect6 has Gathered: {len(Names)} Names'
                     print(helpers.color(e, status=True))
                     for raw in Names:
-                        name = c6.Connect6ParseName(raw)
+                        name = c6.connect6_parse_name(raw)
                         if name:
                             CleanNames.append(name)
             else:
@@ -568,12 +569,12 @@ class Conducter:
                     if Answer:
                         break
                 if Answer.upper() != "B":
-                    Names = c6.Connect6Download(Answer)
+                    Names = c6.connect6_download(Answer)
                     if Names:
                         e = f' [*] Connect6 has Gathered: {len(Names)} Names'
                         print(helpers.color(e, status=True))
                         for raw in Names:
-                            name = c6.Connect6ParseName(raw)
+                            name = c6.connect6_parse_name(raw)
                             if name:
                                 CleanNames.append(name)
         else:
@@ -592,12 +593,12 @@ class Conducter:
                 if Answer:
                     break
             if Answer.upper() != "B":
-                Names = c6.Connect6Download(Answer)
+                Names = c6.connect6_download(Answer)
                 if Names:
                     e = f' [*] Connect6 has Gathered: {len(Names)} Names'
                     print(helpers.color(e, status=True))
                     for raw in Names:
-                        name = c6.Connect6ParseName(raw)
+                        name = c6.connect6_parse_name(raw)
                         if name:
                             CleanNames.append(name)
 
@@ -605,13 +606,13 @@ class Conducter:
         print(helpers.color(' [*] Names have been built:', status=True))
         print(helpers.color(' [*] Attempting to resolve email format', status=True))
         Em = EmailFormat.EmailFormat(domain, Verbose=Verbose)
-        Format = Em.EmailHunterDetect()
+        Format = Em.email_hunter_detect()
         if Format:
             e = f' [!] Auto detected the format: {Format}'
             print(helpers.color(e, status=True))
         if not Format:
             print(helpers.color(" [*] Now attempting to manually detect format (slow)!"))
-            Format = Em.EmailDetect(CleanNames, domain, emaillist)
+            Format = Em.email_detect(CleanNames, domain, emaillist)
             if len(Format) > 1:
                 line = helpers.color(' [*] More than one email format was detected!\n')
                 try:
@@ -684,7 +685,7 @@ class Conducter:
                 if s:
                     break
 
-        BuiltEmails = Em.EmailBuilder(CleanNames, domain, Format, Verbose=Verbose)
+        BuiltEmails = Em.email_builder(CleanNames, domain, Format, Verbose=Verbose)
         if BuiltEmails:
             return BuiltEmails
 
@@ -728,22 +729,6 @@ class Conducter:
         print(" ============================================================")
         print(" Twitter: @real_slacker007 |  Twitter: @Killswitch_gui")
         print(" ============================================================")
-
-    def title_screen(self):
-        self.logger.debug("Title_screen executed")
-        offtext = """------------------------------------------------------------
-   ______  ________                       __ __
- /      \/        |                     /  /  |
-/$$$$$$  $$$$$$$$/ _____  ____   ______ $$/$$ |
-$$ \__$$/$$ |__   /     \/    \ /      \/  $$ |
-$$      \$$    |  $$$$$$ $$$$  |$$$$$$  $$ $$ |
- $$$$$$  $$$$$/   $$ | $$ | $$ |/    $$ $$ $$ |
-/  \__$$ $$ |_____$$ | $$ | $$ /$$$$$$$ $$ $$ |
-$$    $$/$$       $$ | $$ | $$ $$    $$ $$ $$ |
- $$$$$$/ $$$$$$$$/$$/  $$/  $$/ $$$$$$$/$$/$$/
-
-------------------------------------------------------------"""
-        print(helpers.color(offtext, bold=False))
 
     def CompletedScreen(self, FinalCount, EmailsBuilt, domain):
         Config = configparser.ConfigParser()

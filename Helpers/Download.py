@@ -2,7 +2,7 @@
 import requests
 import os
 import configparser
-import helpers
+from Helpers import helpers
 import logging
 import urllib.request
 import urllib.error

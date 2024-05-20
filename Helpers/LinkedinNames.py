@@ -2,7 +2,7 @@
 import configparser
 import mechanize
 from bs4 import BeautifulSoup
-import helpers
+from Helpers import helpers
 
 
 class LinkedinScraper:

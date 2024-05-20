@@ -112,7 +112,7 @@ def get_file_type(path):
 # Setup Logging Class #
 #######################
 
-class Log:
+class log(object):
     """simple logging testing and dev"""
 
     def __init__(self):

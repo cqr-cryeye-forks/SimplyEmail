@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import configparser
-from helpers import color
-from Download import Download
+from Helpers import helpers
+from Helpers.Download import Download
 
 
 # Email layouts supported:
@@ -49,7 +49,7 @@ class EmailFormat:
         JSON API to detect the email format.
         """
         try:
-            dl = Download(self.verbose)
+            dl = Download.Download(self.verbose)
             url = f"https://api.hunter.io/v2/domain-search?domain={self.domain}{self.type}&limit=100&offset=0&api_key={self.api_key}"
             response = dl.requesturl(url, useragent=self.user_agent, raw=True)
             results = response.json()
@@ -58,10 +58,10 @@ class EmailFormat:
                 return pattern
             else:
                 if self.verbose:
-                    print(color(' [!] No pattern detected via EmailHunter API', firewall=True))
+                    print(helpers.color(' [!] No pattern detected via EmailHunter API', firewall=True))
                 return False
         except Exception as e:
-            print(color(f"[!] Major issue with EmailHunter Search: {str(e)}", warning=True))
+            print(helpers.color(f"[!] Major issue with EmailHunter Search: {str(e)}", warning=True))
 
     @staticmethod
     def build_name(clean_name, format, raw=False):
@@ -109,7 +109,7 @@ class EmailFormat:
                 count = final_emails.count(built_email.lower())
                 if count > 0:
                     if self.verbose:
-                        print(color(f" [*] Email format matched {format}: {built_email}", firewall=True))
+                        print(helpers.color(f" [*] Email format matched {format}: {built_email}", firewall=True))
                     if not set_result:
                         final_result.append(format)
                         set_result = True
@@ -128,7 +128,7 @@ class EmailFormat:
                 built_email = self.build_name(name, format) + f"@{domain}"
                 if built_email:
                     if verbose:
-                        print(color(f" [*] Email built: {built_email}", firewall=True))
+                        print(helpers.color(f" [*] Email built: {built_email}", firewall=True))
                     built_emails.append(built_email)
             except Exception as e:
                 print(e)
@@ -137,5 +137,5 @@ class EmailFormat:
             return built_emails
         else:
             if verbose:
-                print(color(' [!] No names built, please do a sanity check!', warning=True))
+                print(helpers.color(' [!] No names built, please do a sanity check!', warning=True))
             return False
