@@ -89,6 +89,9 @@ class Parser:
         except Exception as e:
             self.logger.error('Email evasion check issue: ' + str(e))
 
+    def clean_list_output(self):
+        return [item.rstrip("\n") for item in self.input_data]
+
     def build_results(self, input_list, module_name):
         module_name = f'"{module_name}"'
         return [f"{{'Email': '{email}', 'Source': {module_name}}}" for email in input_list]
