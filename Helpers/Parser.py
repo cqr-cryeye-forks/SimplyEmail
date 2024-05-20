@@ -4,160 +4,111 @@
 import os
 import re
 import logging
-import string
 import subprocess
 import time
 from random import randint
-import helpers
-
-# Simple Parser Options for email enumeration.
-
-# Taken from theHarvester
 
 
-class Parser(object):
+class Parser:
 
-    def __init__(self, InputData):
-        self.InputData = InputData
+    def __init__(self, input_data):
+        self.input_data = input_data
         self.logger = logging.getLogger("SimplyEmail.Parser")
-        #self.domain = domain
 
-    # A really good url clean by theHarvester at :
-    # https://raw.githubusercontent.com/killswitch-GUI/theHarvester/master/myparser.py
-    def genericClean(self):
-        self.InputData = re.sub('<em>', '', self.InputData)
-        self.InputData = re.sub('<b>', '', self.InputData)
-        self.InputData = re.sub('</b>', '', self.InputData)
-        self.InputData = re.sub('</em>', '', self.InputData)
-        self.InputData = re.sub('%2f', ' ', self.InputData)
-        self.InputData = re.sub('%3a', ' ', self.InputData)
-        self.InputData = re.sub('<strong>', '', self.InputData)
-        self.InputData = re.sub('</strong>', '', self.InputData)
-        self.InputData = re.sub('<tr>', ' ', self.InputData)
-        self.InputData = re.sub('</tr>', ' ', self.InputData)
-        self.InputData = re.sub('</a>', ' ', self.InputData)
+    def generic_clean(self):
+        tags_to_remove = ['<em>', '<b>', '</b>', '</em>', '<strong>', '</strong>', '<tr>', '</tr>', '</a>']
+        for tag in tags_to_remove:
+            self.input_data = self.input_data.replace(tag, '')
 
-        for e in (',', '>', ':', '=', '<', '/', '\\', ';', '&', '%3A', '%3D', '%3C', '&#34', '"'):
-            self.InputData = string.replace(self.InputData, e, ' ')
+        replacements = {
+            '%2f': ' ', '%3a': ' ',
+            ',': ' ', '>': ' ', ':': ' ', '=': ' ',
+            '<': ' ', '/': ' ', '\\': ' ', ';': ' ', '&': ' ',
+            '%3A': ' ', '%3D': ' ', '%3C': ' ', '&#34': ' ', '"': ' '
+        }
+        for old, new in replacements.items():
+            self.input_data = self.input_data.replace(old, new)
 
-    # A really good url clean by theHarvester at :
-    # https://raw.githubusercontent.com/killswitch-GUI/theHarvester/master/myparser.py
-    def urlClean(self):
-        self.InputData = re.sub('<em>', '', self.InputData)
-        self.InputData = re.sub('</em>', '', self.InputData)
-        self.InputData = re.sub('%2f', ' ', self.InputData)
-        self.InputData = re.sub('%3a', ' ', self.InputData)
-        for e in ('<', '>', ':', '=', ';', '&', '%3A', '%3D', '%3C'):
-            self.InputData = string.replace(self.InputData, e, ' ')
+    def url_clean(self):
+        self.input_data = self.input_data.replace('<em>', '').replace('</em>', '').replace('%2f', ' ').replace('%3a',
+                                                                                                               ' ')
+        chars_to_remove = ['<', '>', ':', '=', ';', '&', '%3A', '%3D', '%3C']
+        for char in chars_to_remove:
+            self.input_data = self.input_data.replace(char, ' ')
 
-    # http://stackoverflow.com/questions/32747648/
-    # ascii-codec-cant-encode-character-u-u2019-ordinal-out-of-range128
-    def RemoveUnicode(self):
-        """ (str|unicode) -> (str|unicode)
-
-        recovers ascii content from string_data
-        """
+    def remove_unicode(self):
         try:
-            string_data = self.InputData
-            if string_data is None:
-                return string_data
-            if isinstance(string_data, str):
-                string_data = str(string_data.decode('ascii', 'ignore'))
+            if self.input_data is None:
+                return self.input_data
+            if isinstance(self.input_data, str):
+                self.input_data = self.input_data.encode('ascii', 'ignore').decode('ascii')
             else:
-                string_data = string_data.encode('ascii', 'ignore')
+                self.input_data = self.input_data.encode('ascii', 'ignore').decode('ascii')
             remove_ctrl_chars_regex = re.compile(r'[^\x20-\x7e]')
-            self.InputData = remove_ctrl_chars_regex.sub('', string_data)
+            self.input_data = remove_ctrl_chars_regex.sub('', self.input_data)
         except Exception as e:
-            self.logger.error('UTF8 decoding issues' + str(e))
-            p = '[!] UTF8 decoding issues Matching: ' + str(e)
-            print helpers.color(p, firewall=True)
+            self.logger.error('UTF8 decoding issues: ' + str(e))
 
-    def FindEmails(self):
-        Result = []
-        match = re.findall('[\w\.-]+@[\w\.-]+', self.InputData)
-        for item in match:
-            Result.append(item)
-        #emails = self.unique()
-        return Result
+    def find_emails(self):
+        return re.findall(r'[\w\.-]+@[\w\.-]+', self.input_data)
 
-    def GrepFindEmails(self):
-        # Major hack during testing;
-        # I found grep is was better at Regex than re in python
-        FinalOutput = []
-        StartFileName = randint(1000, 999999)
-        EndFileName = randint(1000, 999999)
-        val = ""
+    def grep_find_emails(self):
+        final_output = []
+        start_file_name = f"temp_{randint(1000, 999999)}.txt"
+        end_file_name = f"temp_{randint(1000, 999999)}.txt"
+
         try:
-            with open(str(StartFileName), "w+") as myfile:
-                myfile.write(self.InputData)
-            ps = subprocess.Popen(
-                ('grep', "@", str(StartFileName)), stdout=subprocess.PIPE)
-            val = subprocess.check_output(("grep", "-i", "-o", '[A-Z0-9._%+-]\+@[A-Z0-9.-]\+\.[A-Z]\{2,4\}'),
+            with open(start_file_name, "w") as myfile:
+                myfile.write(self.input_data)
+
+            ps = subprocess.Popen(('grep', "@", start_file_name), stdout=subprocess.PIPE)
+            val = subprocess.check_output(("grep", "-i", "-o", '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}'),
                                           stdin=ps.stdout)
-        # Start Email Evasion Check
-        # This will be a seprate func to handle the lager sets of data
-            EvasionVal = self.EmailEvasionCheck(ps)
+            self.email_evasion_check(ps)
         except Exception as e:
-            pass
-            #p = '[!] Pattern Matching Issue: ' + str(e)
-            # print helpers.color(p, firewall=True)
-        # Remove this line for Debuging pages
-        os.remove(str(StartFileName))
-        if len(val) > 0:
-            with open(str(EndFileName), "w") as myfile:
-                myfile.write(str(val))
-            with open(str(EndFileName), "r") as myfile:
+            self.logger.error('Grep email finding issue: ' + str(e))
+        finally:
+            if os.path.exists(start_file_name):
+                os.remove(start_file_name)
+
+        if val:
+            with open(end_file_name, "w") as myfile:
+                myfile.write(val.decode())
+            with open(end_file_name, "r") as myfile:
                 output = myfile.readlines()
-            os.remove(str(EndFileName))
+            if os.path.exists(end_file_name):
+                os.remove(end_file_name)
             for item in output:
-                FinalOutput.append(item.rstrip("\n"))
-        return FinalOutput
+                final_output.append(item.strip())
+        return final_output
 
-    def EmailEvasionCheck(self, data):
+    def email_evasion_check(self, data):
         try:
-            val = subprocess.check_output(("grep", "-i", "-o", '[A-Z0-9._%+-]\+\s+@+\s[A-Z0-9.-]\+\.[A-Z]\{2,4\}'),
-                                          stdin=data.stdout)
-        except:
-            pass
+            subprocess.check_output(("grep", "-i", "-o", '[A-Z0-9._%+-]+\\s+@+\\s+[A-Z0-9.-]+\\.[A-Z]{2,4}'),
+                                    stdin=data.stdout)
+        except Exception as e:
+            self.logger.error('Email evasion check issue: ' + str(e))
 
-    def CleanListOutput(self):
-        FinalOutput = []
-        for item in self.InputData:
-            FinalOutput.append(item.rstrip("\n"))
-        return FinalOutput
+    def build_results(self, input_list, module_name):
+        module_name = f'"{module_name}"'
+        return [f"{{'Email': '{email}', 'Source': {module_name}}}" for email in input_list]
 
-    def BuildResults(self, InputList, ModuleName):
-        # Will use a generator expression to assign
-        # emails to Keys and place into a list
-        FinalOutput = []
-        ModuleName = '"' + str(ModuleName) + '"'
-        # build dict and append to list
-        for email in InputList:
-            email = '"' + str(email) + '"'
-            ListItem = "{'Email': " + email + ", 'Source': " + ModuleName + "}"
-            FinalOutput.append(ListItem)
-        return FinalOutput
-
-    def BuildJson(self, InputList, ModuleName):
-        FinalOutput = []
-        currentDate = str(time.strftime("%d/%m/%Y"))
-        currentTime = str(time.strftime("%H:%M:%S"))
-        moduleName = str(ModuleName)
-        for email in InputList:
-            obj = {
+    def build_json(self, input_list, module_name):
+        current_date = time.strftime("%d/%m/%Y")
+        current_time = time.strftime("%H:%M:%S")
+        return [
+            {
                 'email': email,
-                'module_name': moduleName,
-                'collection_time': currentTime,
-                'collection_data': currentDate,
+                'module_name': module_name,
+                'collection_time': current_time,
+                'collection_data': current_date,
             }
-            FinalOutput.append(obj)
-        # print FinalOutput
-        return FinalOutput
+            for email in input_list
+        ]
 
-
-    def extendedclean(self, modulename):
-        self.genericClean()
-        self.urlClean()
-        finaloutput = self.GrepFindEmails()
-        htmlresults = self.BuildResults(finaloutput, modulename)
-        return finaloutput, htmlresults
+    def extended_clean(self, module_name):
+        self.generic_clean()
+        self.url_clean()
+        final_output = self.grep_find_emails()
+        html_results = self.build_results(final_output, module_name)
+        return final_output, html_results

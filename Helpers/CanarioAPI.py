@@ -1,73 +1,52 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import json
 import requests
 
-# https://github.com/CanaryPW/Canary-Python
 
-# Canary-Python - A framework for the Canary API
-# Copyright (C) 2014 Colin Keigher (colin@keigher.ca)
+class Canary:
+    def __init__(self, api_key: str, host: str = None, debug: bool = False):
+        self.api_key = api_key
+        self.session = requests.Session()
+        self.url = f"http://{host}/_api/?key={api_key}" if debug else f"https://canar.io/_api/?key={api_key}"
+        self.data = None
 
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
+    def retrieve(self, url: str, data: dict = None, post: bool = False):
+        try:
+            if post:
+                response = self.session.post(url, data=data)
+            else:
+                response = self.session.get(url)
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+            response.raise_for_status()  # Raise an error for bad status codes
+            self.data = response.json()  # Parse the response JSON
+        except requests.RequestException as e:
+            print(f"Error during request to {url}: {e}")
+            self.data = None
 
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+    def build_url(self, data: dict) -> str:
+        params = '&'.join(f"{k}={v}" for k, v in data.items())
+        return f"{self.url}&{params}"
 
+    def search(self, query: str, bang: str = None):
+        if bang:
+            query = f"!{bang} {query}"
+        url = self.build_url({'action': 'search', 'query': query})
+        self.retrieve(url)
+        return self.data
 
-class canary(object):
+    def view(self, item: str):
+        url = self.build_url({'action': 'view', 'item': item})
+        self.retrieve(url)
+        return self.data
 
-    def __init__(s, api_key, host=None, debug=False):
-        s.api_key = api_key
-        if debug:  # This is really for me and nothing else.
-            s.url = 'http://%s/_api/?key=%s' % (host, api_key)
-        else:
-            s.url = 'https://canar.io/_api/?key=%s' % api_key
-        s.data = None
-
-    # Simple request made
-    def retrieve(s, url, data=None, post=False):
-        if post:
-            r = requests.post(url, data=data)
-        else:
-            r = requests.get(url)
-        if r.status_code == 200:
-            s.data = json.loads(r.text)
-
-    # 'data' must be in the form of a dictionary
-    def build_url(s, data):
-        d = ['%s=%s' % (x, y) for x, y in data.iteritems()]
-        return '%s&%s' % (s.url, '&'.join(d))
-
-    # Does a search--whee. Bangs can be specified via separate argument. This is due to plan to make changes to the search for API users
-    # in the future.
-    def search(s, query, bang=None):
-        if bang is not None:
-            query = '!%s %s' % (bang, query)
-        url = s.build_url({'action': 'search', 'query': query})
-        s.retrieve(url=url)
-        return s.data
-
-    # Views a reference ID. Nothing special.
-    def view(s, item):
-        url = s.build_url({'action': 'view', 'item': item})
-        s.retrieve(url=url)
-        return s.data
-
-    # Users with the ability to submit data can use this to send. This is not
-    # documented.
-    def store(s, title, text, source, source_url):
-        if title is None:
+    def store(self, title: str, text: str, source: str, source_url: str):
+        if not title:
             title = 'Untitled'
-        data = {'title': title, 'text': text,
-                'source': source, 'source_url': source_url}
-        url = s.build_url({'action': 'store'})
-        s.retrieve(url=url, data=data, post=True)
+        data = {'title': title, 'text': text, 'source': source, 'source_url': source_url}
+        url = self.build_url({'action': 'store'})
+        self.retrieve(url, data=data, post=True)
+
+# Example usage:
+# canary_instance = Canary(api_key='your_api_key_here')
+# search_result = canary_instance.search('example query')
+# print(search_result)

@@ -1,183 +1,113 @@
 #!/usr/bin/env python
-import helpers
 import requests
 import configparser
-import urlparse
+import urllib.parse as urlparse
 import logging
-from BeautifulSoup import BeautifulSoup
+from bs4 import BeautifulSoup
 
 
-class Connect6Scraper(object):
-
+class Connect6Scraper:
     '''
     A simple class to scrape names from connect6.com
     '''
 
-    def __init__(self, domain, Verbose=False):
+    def __init__(self, domain, verbose=False):
         config = configparser.ConfigParser()
+        self.logger = logging.getLogger("SimplyEmail.Connect6")
         try:
-            self.logger = logging.getLogger("SimplyEmail.Connect6")
             config.read('Common/SimplyEmail.ini')
-            self.UserAgent = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+            self.user_agent = {
+                'User-Agent': ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) '
+                               'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36')}
             self.domain = domain
-            self.FinalAnswer = ''
-            self.verbose = Verbose
+            self.final_answer = ''
+            self.verbose = verbose
         except Exception as e:
-            print e
+            self.logger.error(f"Error during initialization: {e}")
 
-    '''
-    Try to find the connect6 url for the domain
-    you are trageting.
-    '''
+    def connect6_auto_url(self):
+        '''
+        Try to find the connect6 URL for the domain you are targeting.
+        '''
+        urllist = []
+        try:
+            domain = self.domain.split('.')[0]
+            url = f"https://www.google.com/search?q=site:connect6.com+{domain}"
+            r = requests.get(url, headers=self.user_agent)
+            r.raise_for_status()
+        except requests.RequestException as e:
+            error = f"[!] Major issue with Google Search for Connect6 URL: {e}"
+            self.logger.error(error)
+            return urllist
 
-    def Connect6AutoUrl(self):
-        # Using startpage to attempt to get the URL
-        # https://www.google.com/search?q=site:connect6.com+domain.com
         try:
-            # This returns a JSON object
-            urllist = []
-            domain = self.domain.split('.')
-            url = "https://www.google.com/search?q=site:connect6.com+%22" + \
-                domain[0] + '%22'
-            r = requests.get(url, headers=self.UserAgent)
-        except Exception as e:
-            error = "[!] Major issue with Google Search: for Connect6 URL" + \
-                str(e)
-            print helpers.color(error, warning=True)
-        try:
-            rawhtml = r.content
-            soup = BeautifulSoup(rawhtml)
-            for a in soup.findAll('a', href=True):
+            soup = BeautifulSoup(r.content, 'html.parser')
+            for a in soup.find_all('a', href=True):
                 try:
-                    l = urlparse.parse_qs(
-                        urlparse.urlparse(a['href']).query)['q']
-                    if 'site:connect6.com' not in l[0]:
+                    l = urlparse.parse_qs(urlparse.urlparse(a['href']).query).get('q')
+                    if l and 'site:connect6.com' not in l[0]:
                         l = l[0].split(":")
                         urllist.append(l[2])
-                except:
-                    pass
-            if urllist:
-                y = 0
-                s = 0
-                for x in urllist:
-                    if "/c" in x:
-                        urllist.insert(s, urllist.pop(y))
-                        s += 1
-                    y += 1
+                except Exception:
+                    continue
+
+            # Prioritize URLs containing '/c'
+            urllist.sort(key=lambda x: 0 if '/c' in x else 1)
             return urllist
         except Exception as e:
-            print e
+            self.logger.error(f"Error parsing URL list: {e}")
             return urllist
 
-    def Connect6Download(self, url):
+    def connect6_download(self, url):
         '''
         Downloads raw source of Connect6 page.
         '''
-        NameList = []
+        namelist = []
         try:
-            if url.startswith('http') or url.startswith('https'):
-                r = requests.get(url, headers=self.UserAgent)
-            else:
-                url = 'http://' + str(url)
-                if self.verbose:
-                    p = " [*] Now downloading Connect6 Source: " + str(url)
-                    print helpers.color(p, firewall=True)
-                r = requests.get(url, headers=self.UserAgent)
+            if not url.startswith(('http', 'https')):
+                url = 'http://' + url
+            if self.verbose:
+                self.logger.info(f"[*] Now downloading Connect6 Source: {url}")
+            r = requests.get(url, headers=self.user_agent)
+            r.raise_for_status()
+        except requests.RequestException as e:
+            error = f"[!] Major issue with Downloading Connect6 source: {e}"
+            self.logger.error(error)
+            return namelist
+
+        try:
+            soup = BeautifulSoup(r.content, 'html.parser')
+            for utag in soup.find_all("ul", {"class": "directoryList"}):
+                for litag in utag.find_all('li'):
+                    namelist.append(litag.text)
+                    if self.verbose:
+                        self.logger.info(f"[*] Connect6 Name Found: {litag.text}")
+            return namelist
         except Exception as e:
-            error = " [!] Major issue with Downloading Connect6 source:" + \
-                str(e)
-            print helpers.color(error, warning=True)
-        try:
-            if r:
-                rawhtml = r.content
-                soup = BeautifulSoup(rawhtml)
-                try:
-                    for utag in soup.findAll("ul", {"class": "directoryList"}):
-                        for litag in utag.findAll('li'):
-                            NameList.append(litag.text)
-                            if self.verbose:
-                                p = " [*] Connect6 Name Found: " + \
-                                    str(litag.text)
-                                print helpers.color(p, firewall=True)
-                except:
-                    pass
-                return NameList
-            # for a in soup.findAll('a', href=True):
-        except Exception as e:
-            print e
+            self.logger.error(f"Error parsing Connect6 source: {e}")
+            return namelist
 
-    def Connect6ParseName(self, raw):
+    def connect6_parse_name(self, raw):
         '''
-        Takes a raw non parsed name from connect 6.
-        Returns a list of the Name [first, last]
+        Takes a raw non-parsed name from connect6.com.
+        Returns a list of the name [first, last].
         '''
-        # Adapted by:
-        #   Author: @Harmj0y
-        #   Author Blog: http://t.co/ZYPKvkeayX
-        #   helper to try to parse all the types of naming convent
         try:
-            if raw.strip() != "":
-                if "(" in raw:
-                    raw = raw.split("(")[0]
-
-                if "," in raw:
-                    raw = raw.split(",")[0]
-
-                if "/" in raw:
-                    raw = raw.split("/")[0]
-
-                raw = raw.strip()
-
-                if raw.endswith("."):
-                    return None
-
-                if len(raw) == 1:
-                    return None
-
-                if "LinkedIn" in raw:
-                    return None
-
-                if "\"" in raw:
+            if raw.strip():
+                raw = raw.split('(')[0].split(',')[0].split('/')[0].strip()
+                if raw.endswith(".") or len(raw) == 1 or "LinkedIn" in raw or '"' in raw:
                     return None
 
                 parts = raw.split()
-
-                firstName = ""
-                lastName = ""
-
                 if len(parts) > 2:
                     if "(" in parts[1]:
-                        # assume nickname in middle
-                        firstName = parts[0].strip()
-                        lastName = parts[2].strip()
+                        return [parts[0].strip(), parts[2].strip()]
                     elif len(parts[2]) < 4:
-                        # assume certification
-                        firstName = parts[0].strip()
-                        lastName = parts[1].strip()
+                        return [parts[0].strip(), parts[1].strip()]
                     else:
-                        # assume FIRST MIDDLE LASTNAME
-                        firstName = parts[0].strip()
-                        lastName = parts[2].strip()
-
+                        return [parts[0].strip(), parts[2].strip()]
                 elif len(parts) == 2:
-                    # assume FIRST LASTNAME
-                    firstName = parts[0].strip()
-                    lastName = parts[1].strip()
-
-                if "." in lastName:
-                    return None
-
-                if len(lastName) < 2:
-                    return None
-
-                if "\"" in lastName:
-                    lastName = lastName.replace("\"", "")
-
-                if "'" in lastName:
-                    lastName = lastName.replace("'", "")
-
-                else:
-                    return [firstName, lastName]
+                    return [parts[0].strip(), parts[1].strip()]
         except Exception as e:
-            e = ' [!] Failed to parse name: ' + str(e)
+            self.logger.error(f"[!] Failed to parse name: {e}")
+            return None

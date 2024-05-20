@@ -11,141 +11,108 @@ import collections
 import random
 from fake_useragent import UserAgent
 
-def dictToJson(inputDict):
+
+def dict_to_json(input_dict):
     """
     Takes in a list of dict items.
     Converts them to json and returns list of json obj.
     """
-    obj = []
-    for item in inputDict:
-        obj += json.dumps(item)
-    return obj
+    return [json.dumps(item) for item in input_dict]
 
-def get_searchid():
-    currentDate = str(time.strftime("%d%m%Y"))
-    currentTime = str(time.strftime("%H%M%S"))
-    searchid = currentDate + currentTime
-    return searchid
+
+def get_search_id():
+    return time.strftime("%d%m%Y%H%M%S")
+
 
 def get_datetime():
-    currentDate = str(time.strftime("%d/%m/%Y"))
-    currentTime = str(time.strftime("%H:%M:%S"))
-    datetime = currentDate + ' ' +currentTime
-    return datetime
+    return time.strftime("%d/%m/%Y %H:%M:%S")
 
-def JsonListToJsonObj(inputJsonList, domain):
+
+def json_list_to_json_obj(input_json_list, domain):
     """
     Takes a list of json objects,
     places them in a key and returns the data.
     """
-    currentDate = str(time.strftime("%d/%m/%Y"))
-    currentTime = str(time.strftime("%H:%M:%S"))
-    currentTool = "SimplyEmail"
+    current_date = time.strftime("%d/%m/%Y")
+    current_time = time.strftime("%H:%M:%S")
+    current_tool = "SimplyEmail"
     config = configparser.ConfigParser()
     config.read('Common/SimplyEmail.ini')
-    currentVersion = str(config['GlobalSettings']['Version'])
-    count = len(inputJsonList)
-    dic = collections.OrderedDict()
-    dic = {
-        "domain_of_collection" : domain,
-        "data_of_collection" : currentDate,
-        "time_of_collection" : currentTime,
-        "tool_of_collection" : currentTool,
-        "current_version" :  currentVersion,
-        "email_collection_count" : count,
-        "emails" : inputJsonList,
-    }
-    obj = json.dumps(dic, indent=4, sort_keys=True)
-    return obj
+    current_version = config['GlobalSettings']['Version']
+    count = len(input_json_list)
+    dic = collections.OrderedDict({
+        "domain_of_collection": domain,
+        "data_of_collection": current_date,
+        "time_of_collection": current_time,
+        "tool_of_collection": current_tool,
+        "current_version": current_version,
+        "email_collection_count": count,
+        "emails": input_json_list,
+    })
+    return json.dumps(dic, indent=4, sort_keys=True)
+
 
 def color(string, status=True, warning=False, bold=True, blue=False, firewall=False):
     # Change text color for the linux terminal, defaults to green.
-    # Set "warning=True" for red.
-    # stolen from Veil :)
-    attr = []
-    if status:
-        # green
-        attr.append('32')
+    attr = ['32'] if status else []
     if warning:
-        # red
         attr.append('31')
     if bold:
         attr.append('1')
     if firewall:
         attr.append('33')
     if blue:
-        # blue
         attr.append('34')
-    return '\x1b[%sm%s\x1b[0m' % (';'.join(attr), string)
+    return f'\x1b[{";".join(attr)}m{string}\x1b[0m'
 
 
-def formatLong(title, message, frontTab=True, spacing=16):
+def format_long(title, message, front_tab=True, spacing=16):
     """
     Print a long title:message with our standardized formatting.
     Wraps multiple lines into a nice paragraph format.
     """
-
     lines = textwrap.wrap(textwrap.dedent(message).strip(), width=50)
-    returnstring = ""
+    formatted_message = ""
 
-    i = 1
-    if len(lines) > 0:
-        if frontTab:
-            returnstring += "\t%s%s" % (('{0: <%s}' %
-                                         spacing).format(title), lines[0])
-        else:
-            returnstring += " %s%s" % (('{0: <%s}' %
-                                        (spacing-1)).format(title), lines[0])
-    while i < len(lines):
-        if frontTab:
-            returnstring += "\n\t"+' '*spacing+lines[i]
-        else:
-            returnstring += "\n"+' '*spacing+lines[i]
-        i += 1
-    return returnstring
+    if lines:
+        title_format = '{0: <%s}' % spacing
+        formatted_message += f"\t{title_format.format(title)}{lines[0]}" if front_tab else f" {title_format.format(title)}{lines[0]}"
+        for line in lines[1:]:
+            formatted_message += f"\n\t{' ' * spacing}{line}" if front_tab else f"\n{' ' * spacing}{line}"
+    return formatted_message
 
 
-def DirectoryListing(directory):
+def directory_listing(directory):
     # Returns a list of dir's of results
-    dirs = []
-    for (dir, _, files) in os.walk(directory):
-        for f in files:
-            path = os.path.join(dir, f)
-            if os.path.exists(path):
-                dirs.append(path)
-    return dirs
+    return [os.path.join(dir, f) for dir, _, files in os.walk(directory) for f in files if
+            os.path.exists(os.path.join(dir, f))]
+
 
 def split_email(email):
-    email = email.lower()
-    se = email.split("@")
-    return se
+    return email.lower().split("@")
 
-def getua():
+
+def get_user_agent():
     # gets a random useragent and returns the UA
-    ua = UserAgent()
-    return ua.random
+    return UserAgent().random
 
-def modsleep(delay, jitter=0):
+
+def mod_sleep(delay, jitter=0):
     # Quick Snipit From EmPyre Agent (@HarmJ0y)
-    if jitter < 0: jitter = -jitter
-    if jitter > 1: jitter = 1/jitter
+    jitter = abs(jitter) if jitter < 0 else min(jitter, int(1 / jitter))
+    sleep_time = random.randint(int((1.0 - jitter) * delay), int((1.0 + jitter) * delay))
+    time.sleep(sleep_time)
 
-    minSleep = int((1.0-jitter)*delay)
-    maxSleep = int((1.0+jitter)*delay)
-    sleepTime = random.randint(minSleep, maxSleep)
-    time.sleep(int(sleepTime))
 
-def filetype(path):
-    m = magic.from_file(str(path))
-    return m
+def get_file_type(path):
+    return magic.from_file(str(path))
+
 
 #######################
 # Setup Logging Class #
 #######################
 
-
-class log(object):
-
+class Log:
     """simple logging testing and dev"""
 
     def __init__(self):
@@ -155,26 +122,22 @@ class log(object):
         logger = logging.getLogger("SimplyEmail")
         logger.setLevel(logging.INFO)
         fh = logging.FileHandler(self.name)
-        formatter = logging.Formatter(
-            '%(asctime)s-[%(name)s]-[%(levelname)s]- %(message)s')
+        formatter = logging.Formatter('%(asctime)s-[%(name)s]-[%(levelname)s]- %(message)s')
         fh.setFormatter(formatter)
         logger.addHandler(fh)
         logger.info("Program started")
         logging.captureWarnings(True)
         logger.info("Set Logging Warning Capture: True")
 
-    def infomsg(self, message, modulename):
-        try:
-            msg = 'SimplyEmail.' + str(modulename)
-            logger = logging.getLogger(msg)
-            logger.info(str(message))
-        except Exception as e:
-            print e
+    def info_msg(self, message, module_name):
+        self._log_msg(message, module_name, level="info")
 
-    def warningmsg(self, message, modulename):
+    def warning_msg(self, message, module_name):
+        self._log_msg(message, module_name, level="warning")
+
+    def _log_msg(self, message, module_name, level="info"):
         try:
-            msg = 'SimplyEmail.' + str(modulename)
-            logger = logging.getLogger(msg)
-            logger.warning(str(message))
+            logger = logging.getLogger(f'SimplyEmail.{module_name}')
+            getattr(logger, level)(str(message))
         except Exception as e:
-            print e
+            print(e)

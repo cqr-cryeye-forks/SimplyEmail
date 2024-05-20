@@ -1,131 +1,102 @@
 #!/usr/bin/env python
-import helpers
 import configparser
 import mechanize
 from bs4 import BeautifulSoup
+import helpers
 
 
-# This class has been adapted from (@pan0pt1c0n):
-# https://github.com/pan0pt1c0n/PhishBait/blob/master/Bing_Scraper.py
+class LinkedinScraper:
+    """
+    A simple class to scrape names from bing.com for LinkedIn names.
+    """
 
-class LinkedinScraper(object):
+    def __init__(self, domain, verbose=False):
+        self.domain = domain.split('.')[0]
+        self.verbose = verbose
+        self.user_agent = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
+        }
 
-    '''
-    A simple class to scrape names from bing.com for
-    LinkedIn names.
-    '''
-
-    def __init__(self, domain, Verbose=False):
-        config = configparser.ConfigParser()
+        self.config = configparser.ConfigParser()
         try:
-            config.read('Common/SimplyEmail.ini')
-            self.UserAgent = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
-            self.domain = domain
-            self.FinalAnswer = ''
-            self.verbose = Verbose
+            self.config.read('Common/SimplyEmail.ini')
         except Exception as e:
-            print e
+            print(f"Error reading configuration: {e}")
 
-    def LinkedInNames(self):
-        # This function simply uses
-        # Bing to scrape for names and
-        # returns a list of list names.
+    def linked_in_names(self):
+        """
+        Uses Bing to scrape for LinkedIn names and returns a list of names.
+        """
         try:
             br = mechanize.Browser()
             br.set_handle_robots(False)
-            self.domain = self.domain.split('.')
-            self.domain = self.domain[0]
-            r = br.open('http://www.bing.com/search?q=(site%3A%22www.linkedin.com%2Fin%2F%22%20OR%20site%3A%22www.linkedin.com%2Fpub%2F%22)%20%26%26%20(NOT%20site%3A%22www.linkedin.com%2Fpub%2Fdir%2F%22)%20%26%26%20%22' +
-                        self.domain + '%22&qs=n&form=QBRE&pq=(site%3A%22www.linkedin.com%2Fin%2F%22%20or%20site%3A%22www.linkedin.com%2Fpub%2F%22)%20%26%26%20(not%20site%3A%22www.linkedin.com%2Fpub%2Fdir%2F%22)%20%26%26%20%22'+self.domain+'%22')
-            soup = BeautifulSoup(r, 'lxml')
-            if soup:
-                link_list = []
-                namelist = []
-                more_records = True
-                Round = False
-                while more_records:
-                    if Round:
-                        response = br.follow_link(text="Next")
-                        soup = BeautifulSoup(response)
-                    # enter this loop to parse all results
-                    # also follow any seondary links
-                    for definition in soup.findAll('h2'):
-                        definition = definition.renderContents()
-                        if "LinkedIn" in definition:
-                            name = (((((definition.replace('<strong>', '')).replace(
-                                '</strong>', '')).split('>')[1]).split('|')[0]).rstrip()).split(',')[0]
-                            name = name.split(' ')
-                            if self.verbose:
-                                e = ' [*] LinkedIn Name Found: ' + str(name)
-                                print helpers.color(e, firewall=True)
-                            namelist.append(name)
-                    for link in br.links():
-                        link_list.append(link.text)
-                    if "Next" in link_list:
-                        more_records = True
-                        Round = True
-                    else:
-                        more_records = False
-                if namelist:
-                    return namelist
-        except Exception as e:
-            error = " [!] Major issue with Downloading LinkedIn source:" + \
-                str(e)
-            print helpers.color(error, warning=True)
-        if namelist:
-            return namelist
+            query = f'site:"www.linkedin.com/in/" OR site:"www.linkedin.com/pub/" -site:"www.linkedin.com/pub/dir/" "{self.domain}"'
+            url = f'http://www.bing.com/search?q={query}&qs=n&form=QBRE'
+            response = br.open(url)
+            soup = BeautifulSoup(response, 'lxml')
+            names_list = self._extract_names(br, soup)
 
-    def LinkedInClean(self, raw):
-        '''
-        This function simply uses clean names.
-        '''
-        try:
-            if raw:
-                firstname = raw[0]
-                lastname = raw[1]
-                try:
-                    if "'" in firstname:
-                        firstname = firstname.replace("'", "")
-                    if "-" in firstname:
-                        firstname = firstname.replace("-", "")
-                    if " " in firstname:
-                        firstname = firstname.replace(" ", "")
-                    if "," in firstname:
-                        firstname = firstname.replace(",", "")
-                    if "(" in firstname:
-                        firstname = firstname.replace("(", "")
-                    if ")" in firstname:
-                        firstname = firstname.replace(")", "")
-                    if "'" in lastname:
-                        lastname = lastname.replace("'", "")
-                    if "-" in lastname:
-                        lastname = lastname.replace("-", "")
-                    if " " in lastname:
-                        lastname = lastname.replace(" ", "")
-                    if "," in lastname:
-                        lastname = lastname.replace(",", "")
-                    if "(" in lastname:
-                        lastname = lastname.replace("(", "")
-                    if ")" in lastname:
-                        lastname = lastname.replace(")", "")
-                    if ("@" in firstname) or ("@" in lastname):
-                        return None
-                except Exception as e:
-                    pass
-                try:
-                    if raw[3]:
-                        firstname = raw[0]
-                        lastname = raw[3]
-                        return [firstname, lastname]
-                except Exception as e:
-                    pass
-                if self.verbose:
-                    e = ' [*] Name Cleaned: ' + str([firstname, lastname])
-                    print helpers.color(e, firewall=True)
-                return [firstname, lastname]
+            if names_list:
+                return names_list
+
         except Exception as e:
-            if self.verbose:
-                h = " [!] Error during name building: " + str(e)
-                print helpers.color(h, warning=True)
+            error_msg = f"Major issue with downloading LinkedIn source: {e}"
+            print(helpers.color(error_msg, warning=True))
+
+        return []
+
+    def _extract_names(self, br, soup):
+        """
+        Helper function to extract names from the soup object.
+        """
+        names_list = []
+        while True:
+            for definition in soup.find_all('h2'):
+                content = definition.get_text()
+                if "LinkedIn" in content:
+                    name = content.split('>')[1].split('|')[0].strip().split(',')[0]
+                    name_parts = name.split(' ')
+                    if self.verbose:
+                        print(helpers.color(f"[*] LinkedIn Name Found: {name_parts}", firewall=True))
+                    names_list.append(name_parts)
+            if not self._follow_next_page(br, soup):
+                break
+        return names_list
+
+    def _follow_next_page(self, br, soup):
+        """
+        Helper function to follow the next page of search results if available.
+        """
+        link_list = [link.text for link in br.links()]
+        if "Next" in link_list:
+            response = br.follow_link(text="Next")
+            soup = BeautifulSoup(response, 'lxml')
+            return True
+        return False
+
+    def linked_in_clean(self, raw):
+        """
+        Cleans raw names by removing unwanted characters.
+        """
+        if not raw:
             return None
+
+        firstname, lastname = raw[0], raw[1]
+        cleaned_firstname = self._clean_name(firstname)
+        cleaned_lastname = self._clean_name(lastname)
+
+        if ("@" in cleaned_firstname) or ("@" in cleaned_lastname):
+            return None
+
+        if self.verbose:
+            print(helpers.color(f"[*] Name Cleaned: {cleaned_firstname} {cleaned_lastname}", firewall=True))
+
+        return [cleaned_firstname, cleaned_lastname]
+
+    def _clean_name(self, name):
+        """
+        Helper function to remove unwanted characters from a name.
+        """
+        for char in ["'", "-", " ", ",", "(", ")"]:
+            name = name.replace(char, "")
+        return name

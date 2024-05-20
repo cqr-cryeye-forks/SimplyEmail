@@ -1,23 +1,17 @@
 #!/usr/bin/env python
-# encoding=utf8 
-import sys
+# encoding=utf8
 import ast
-
-# This Classes main goal is to build the HTML output file using all self
-# contained CSS and JS
 
 
 class HtmlBuilder(object):
 
-    def __init__(self, Emails, Domain):
-        self.Emails = Emails
-        self.Domain = Domain
-        self.Source = ""
-        self.HTML = ""
-        reload(sys)
-        sys.setdefaultencoding('utf8')
+    def __init__(self, emails, domain):
+        self.emails = emails
+        self.domain = domain
+        self.source = ""
+        self.html = ""
 
-    def BuildHtml(self):
+    def build_html(self):
         BottomHtml = """
             </tbody>
           </table>
@@ -75,60 +69,67 @@ function AnchorJS(a){"use strict";this.options=a||{},this._applyRemainingDefault
 
   </body>
 </html>"""
-    # Build out Tables using simple pre-formated Divs
-
-        EmailTables = ""
+        # Build out Tables using simple pre-formatted Divs
+        email_tables = ""
         x = 1
-        # Build Table Struc
-        tables =  '\t\t<div class="col-md-10">'
-        tables += '\t\t\t<table class="table table-striped">'
-        tables += '\t\t\t<thead>'
-        tables += '\t\t\t<tr>'
-        tables += '\t\t\t\t<th>#</th>'
-        tables += '\t\t\t\t<th>Domain</th>'
-        tables += '\t\t\t\t<th>Email</th>'
-        tables += '\t\t\t<th>Email Source</th>'
-        tables += '\t\t\t</tr>'
-        tables += '\t\t\t</thead>'
-        tables += '\t\t<tbody>'
-        self.HTML += tables
-        for Email in self.Emails:
-            # This converts a List of Dict from String
-            # To a actual Dict item
-            Email = ast.literal_eval(Email)
-            line = "\t\t<tr>\n"
-            line += "\t\t\t<td>" + str(x) + "</td>\n"
-            line += "\t\t\t<td>" + str(self.Domain) + "</td>\n"
-            line += "\t\t\t<td>" + str(Email['Email']) + "</td>\n"
-            line += "\t\t\t<td>" + str(Email['Source']) + "</td>\n"
-            line += "\t\t</tr>\n"
-            x += 1
-            EmailTables += str(line)
-        self.HTML += EmailTables
-        if "Canary Paste Bin" in self.HTML:
-            # We will add an alert for canary searches returned.
-            #<div class="alert alert-warning" role="alert">
-            #   <strong>Warning!</strong> Best check yo self, you're not looking too good.
-            #</div>
-            alert =  '\t\t<div class="alert alert-danger" role="alert">'
-            alert += "\t\t\t<strong>Warning!</strong> Canary (PasteBin) search detected Email(s), this search is indicative of a data breach!."
-            alert += '\t\t</div>'
-            temp = self.HTML
-            self.HTML = alert
-            self.HTML += temp
-        self.HTML += BottomHtml
 
-    def OutPutHTML(self, Path):
+        # Build Table Structure
+        tables = (
+            '\t\t<div class="col-md-10">'
+            '\t\t\t<table class="table table-striped">'
+            '\t\t\t<thead>'
+            '\t\t\t<tr>'
+            '\t\t\t\t<th>#</th>'
+            '\t\t\t\t<th>Domain</th>'
+            '\t\t\t\t<th>Email</th>'
+            '\t\t\t\t<th>Email Source</th>'
+            '\t\t\t</tr>'
+            '\t\t\t</thead>'
+            '\t\t<tbody>'
+        )
+        self.html += tables
+
+        for email in self.emails:
+            # This converts a List of Dict from String to an actual Dict item
+            email = ast.literal_eval(email)
+            line = (
+                f"\t\t<tr>\n"
+                f"\t\t\t<td>{x}</td>\n"
+                f"\t\t\t<td>{self.domain}</td>\n"
+                f"\t\t\t<td>{email['Email']}</td>\n"
+                f"\t\t\t<td>{email['Source']}</td>\n"
+                f"\t\t</tr>\n"
+            )
+            x += 1
+            email_tables += line
+
+        self.html += email_tables
+
+        if "Canary Paste Bin" in self.html:
+            # Add an alert for canary searches returned
+            alert = (
+                '\t\t<div class="alert alert-danger" role="alert">'
+                "\t\t\t<strong>Warning!</strong> Canary (PasteBin) search detected Email(s), this search is indicative of a data breach!."
+                '\t\t</div>'
+            )
+            self.html = alert + self.html
+
+        self.html += "</tbody></table></div>"
+
+    def output_html(self, path):
         try:
-            with open('Helpers/bootstrap-3.3.5/SimplyEmailTemplate.html', "r") as myfile:
-                SourceHtml = unicode(myfile.read())
+            with open('Helpers/bootstrap-3.3.5/SimplyEmailTemplate.html', "r", encoding='utf8') as myfile:
+                source_html = myfile.read()
         except Exception as e:
-            print e
-        # Add my tables to the bottom of the HTML and CSS
-        SourceHtml += unicode(self.HTML)
-        buildpath = Path + '/Email_List.html'
+            print(e)
+            return
+
+        # Add tables to the bottom of the HTML and CSS
+        source_html += self.html
+        build_path = f'{path}/Email_List.html'
+
         try:
-            with open(buildpath, "w") as myfile:
-                myfile.write(SourceHtml)
+            with open(build_path, "w", encoding='utf8') as myfile:
+                myfile.write(source_html)
         except Exception as e:
-            print e
+            print(e)

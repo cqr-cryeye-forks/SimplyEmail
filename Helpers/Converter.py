@@ -2,47 +2,41 @@
 import logging
 import docx2txt
 from zipfile import ZipFile
-# from pptx import Presentation
 from subprocess import Popen, PIPE, STDOUT
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.converter import TextConverter
 from pdfminer.layout import LAParams
 from pdfminer.pdfpage import PDFPage
-from cStringIO import StringIO
+from io import StringIO
+from pptx import Presentation
 
 
-class Converter(object):
+class Converter:
 
     def __init__(self, verbose=False):
         try:
             self.logger = logging.getLogger("SimplyEmail.Converter")
             self.verbose = verbose
         except Exception as e:
-            print e
+            print(e)
 
     def convert_docx_to_txt(self, path):
         """
-        A very simple conversion function
-        which returns unicode text for
-        parsing.
+        A very simple conversion function which returns unicode text for parsing.
 
         path = The path to the file
         """
-        # https://github.com/ankushshah89/python-docx2txt
         try:
             text = docx2txt.process(path)
-            self.logger.debug("Converted docx to text: " + str(path))
-            return unicode(text)
-        except Exception as e:
-            text = ""
+            self.logger.debug(f"Converted docx to text: {path}")
             return text
-            self.logger.error(
-                "Failed to DOCX to text: " + str(e))
+        except Exception as e:
+            self.logger.error(f"Failed to convert DOCX to text: {e}")
+            return ""
 
     def convert_doc_to_txt(self, path):
         """
-        A very simple conversion function
-        which returns text for parsing.
+        A very simple conversion function which returns text for parsing.
 
         path = The path to the file
         """
@@ -52,58 +46,44 @@ class Converter(object):
             stdout, stderr = p.communicate()
             return stdout.decode('ascii', 'ignore')
         except Exception as e:
-            text = ""
-            return text
-            self.logger.error(
-                "Failed to DOC to text: " + str(e))
+            self.logger.error(f"Failed to convert DOC to text: {e}")
+            return ""
 
-    # def convert_pptx_to_txt(self, path):
-    #     prs = Presentation(path)
-    #     # text_runs will be populated with a list of strings,
-    #     # one for each text run in presentation
-    #     text_runs = ""
-    #     try:
-    #         for slide in prs.slides:
-    #             try:
-    #                 for shape in slide.shapes:
-    #                     if not shape.has_text_frame:
-    #                         continue
-    #                     for paragraph in shape.text_frame.paragraphs:
-    #                         for run in paragraph.runs:
-    #                             text_runs += str(run.text) + ' '
-    #             except:
-    #                 pass
-    #         return text_runs
-    #     except Exception as e:
-    #         if text_runs:
-    #             return text_runs
-    #         else:
-    #             text_runs = ""
-    #             return text_runs
-    #         self.logger.error("Failed to convert pptx: " + str(e))
+    def convert_pptx_to_txt(self, path):
+        """
+        Converts PPTX to text.
+
+        path = The path to the file
+        """
+        prs = Presentation(path)
+        text_runs = ""
+        try:
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if not shape.has_text_frame:
+                        continue
+                    for paragraph in shape.text_frame.paragraphs:
+                        for run in paragraph.runs:
+                            text_runs += str(run.text) + ' '
+            return text_runs
+        except Exception as e:
+            self.logger.error(f"Failed to convert pptx: {e}")
+            return text_runs if text_runs else ""
 
     def convert_pdf_to_txt(self, path):
         """
-        A very simple conversion function
-        which returns text for parsing from PDF.
+        A very simple conversion function which returns text for parsing from PDF.
 
         path = The path to the file
         """
         try:
             rsrcmgr = PDFResourceManager()
             retstr = StringIO()
-            codec = 'utf-8'
             laparams = LAParams()
-            device = TextConverter(
-                rsrcmgr, retstr, codec=codec, laparams=laparams)
-            fp = file(path, 'rb')
+            device = TextConverter(rsrcmgr, retstr, laparams=laparams)
+            fp = open(path, 'rb')
             interpreter = PDFPageInterpreter(rsrcmgr, device)
-            password = ""
-            maxpages = 0
-            caching = True
-            pagenos = set()
-            for page in PDFPage.get_pages(fp, pagenos, maxpages=maxpages, password=password, caching=caching,
-                                          check_extractable=True):
+            for page in PDFPage.get_pages(fp):
                 interpreter.process_page(page)
             text = retstr.getvalue()
             fp.close()
@@ -111,15 +91,16 @@ class Converter(object):
             retstr.close()
             return text
         except Exception as e:
-            text = ""
-            return text
-            self.logger.error(
-                "Failed to PDF to text: " + str(e))
+            self.logger.error(f"Failed to convert PDF to text: {e}")
+            return ""
 
-    def convert_Xlsx_to_Csv(self, path):
-        # Using the Xlsx2csv tool seemed easy and was in python anyhow
-        # it also supported custom delim :)
-        self.logger.debug("convert_Xlsx_to_Csv on file: " + str(path))
+    def convert_xlsx_to_csv(self, path):
+        """
+        Converts XLSX to CSV using the xlsx2csv tool.
+
+        path = The path to the file
+        """
+        self.logger.debug(f"convert_xlsx_to_csv on file: {path}")
         try:
             cmd = ['xlsx2csv', path]
             p = Popen(cmd, stdout=PIPE, stderr=STDOUT)
@@ -127,32 +108,30 @@ class Converter(object):
             text = stdout.decode('ascii', 'ignore')
             return text
         except Exception as e:
-            text = ""
-            return text
-            self.logger.error(
-                "Failed to convert_Xlsx_to_Csv to text: " + str(e))
+            self.logger.error(f"Failed to convert XLSX to CSV: {e}")
+            return ""
 
     def convert_zip_to_text(self, path, rawtext=True):
-        # http://stackoverflow.com/questions/10908877/extracting-a-zipfile-to-memory
+        """
+        Converts ZIP file contents to text.
+
+        path = The path to the file
+        rawtext = Whether to extract raw text from files
+        """
         try:
-            self.logger.debug("Attempting to unzip file: " + str(path))
+            self.logger.debug(f"Attempting to unzip file: {path}")
             input_zip = ZipFile(path)
             if rawtext:
                 text = ""
-                a = {name: input_zip.read(name) for name in input_zip.namelist()}
-                for x in a:
+                for name in input_zip.namelist():
                     try:
-                        text += str(a[x])
+                        text += input_zip.read(name).decode('utf-8')
                     except Exception as e:
-                        print e
-                        # pass
-                self.logger.debug("Unzip of file complted (raw text): " + str(path))
+                        print(e)
+                self.logger.debug(f"Unzip of file completed (raw text): {path}")
                 return text
             else:
                 return {name: input_zip.read(name) for name in input_zip.namelist()}
         except Exception as e:
-            print e
-            text = ""
-            return text
-            self.logger.error(
-                "Failed unzip file: " + str(e))
+            self.logger.error(f"Failed to unzip file: {e}")
+            return ""
