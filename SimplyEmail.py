@@ -8,6 +8,9 @@
 #
 import argparse
 import configparser
+import pathlib
+from typing import Final
+
 from Helpers import helpers
 from Helpers import VersionCheck
 from Common import TaskController
@@ -20,61 +23,48 @@ def cli_parser():
         a simple yet effective way to get what Recon-Ng gets and theHarvester gets.
         ''')
     parser.add_argument("--all", action='store_true', help="Use all non-API methods to obtain Emails")
-    parser.add_argument("--email", metavar="company.com", default="",
-                        help="Set required email addr user, ex ale@email.com")
-    parser.add_argument("--list-modules", action='store_true', help="List the current Modules Loaded")
-    parser.add_argument("--test-module", metavar="html / flickr / google",
+    parser.add_argument("--email", metavar="company.com", help="Set required email addr user, ex ale@email.com")
+    parser.add_argument("--list-modules", dest="list", action='store_true', help="List the current Modules Loaded")
+    parser.add_argument("--test-module", dest="test", metavar="html / flickr / google",
                         help="Test individual module (For Linting)")
     parser.add_argument("--no-scope", action='store_true',
                         help="Set this to enable 'No-Scope' of the email parsing")
     parser.add_argument("--name-generation", action='store_true', help="Set this to enable Name Generation")
     parser.add_argument("--verify", action='store_true', help="Set this to enable SMTP server email verify")
     parser.add_argument("--verbose", action='store_true', help="Set this switch for verbose output of modules")
-    parser.add_argument("--json", metavar='json-emails.txt', default="",
-                        help="Set this switch for JSON output to specific file")
-    parser.add_argument('--help', '-h', action="store_true", help="Show this help message and exit")
+    parser.add_argument("--json", metavar='json-emails.txt', help="Set this switch for JSON output to specific file")
+    parser.add_argument("--output", help="Svae output in Json file. Example='data.json'")
 
     args = parser.parse_args()
-    if args.help:
-        parser.print_help()
-        exit()
-
-    return args.all, args.email, args.list_modules, args.test_module, args.no_scope, args.name_generation, args.verify, args.verbose, args.json
+    return args
 
 
 def task_starter(version):
     log = helpers.log()
     log.start()
-    cli_all, cli_domain, cli_list, cli_test, cli_scope, cli_names, cli_verify, cli_verbose, cli_json = cli_parser()
-    cli_domain = cli_domain.lower()
+    args = cli_parser()
+
+    MAIN_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent
+    JSON_FILE: Final[pathlib.Path] = args.output / MAIN_DIR
+
+    if args.email:
+        cli_domain = args.email.lower()
+    else:
+        log.warning_msg("Domain not supplied", "Main")
+        print(helpers.color("[*] No Domain Supplied to start up!\n", warning=True))
+        exit()
+
     task = TaskController.Conducter()
     task.load_modules()
 
-    if cli_list:
-        log.infomsg("Tasked to List Modules", "Main")
+    if args.list:
+        log.info_msg("Tasked to List Modules", "Main")
         task.ListModules()
         version_check = VersionCheck.VersionCheck(version)
         version_check.version_request()
         exit()
 
-    if not cli_domain:
-        log.warningmsg("Domain not supplied", "Main")
-        print(helpers.color("[*] No Domain Supplied to start up!\n", warning=True))
-        exit()
-
-    if cli_test:
-        log.infomsg(f"Tasked to Test Module: {cli_test}", "Main")
-        version_check = VersionCheck.VersionCheck(version)
-        version_check.version_request()
-        task.TestModule(cli_domain, cli_test, verbose=cli_verbose, scope=cli_scope, Names=cli_names, Verify=cli_verify,
-                        json=cli_json)
-
-    if cli_all:
-        log.infomsg(f"Tasked to run all Modules on domain: {cli_domain}", "Main")
-        version_check = VersionCheck.VersionCheck(version)
-        version_check.version_request()
-        task.TaskSelector(cli_domain, verbose=cli_verbose, scope=cli_scope, Names=cli_names, Verify=cli_verify,
-                          json=cli_json)
+    task.TaskSelector(cli_domain, output=JSON_FILE)
 
 
 def main():
@@ -88,7 +78,6 @@ def main():
 
     orc = TaskController.Conducter()
     orc.title()
-    orc.title_screen()
     task_starter(version)
 
 
@@ -97,7 +86,3 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print('Interrupted')
-        try:
-            exit()
-        except SystemExit:
-            exit()
