@@ -9,8 +9,10 @@ from Helpers import helpers
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class GitHubUserSearch:
+
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Searching GitHubUser Search"
         self.description = "Search GitHubUser for emails using the user search function"
         self.domain = domain
@@ -35,7 +37,7 @@ class GitHubUserSearch:
     def search(self):
         dl = Download.Download(verbose=self.verbose)
         while self.counter <= self.depth and self.counter <= 100:
-            helpers.modsleep(5)
+            helpers.mod_sleep(5)
             if self.verbose:
                 logger.info(f"GitHubUser Search on page: {self.counter}")
             try:

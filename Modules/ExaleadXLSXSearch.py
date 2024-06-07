@@ -14,8 +14,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class ExaleadXLSXSearch:
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Exalead XLSX Search for Emails"
         self.description = "Uses Exalead Dorking to search XLSXs for emails"
         self.domain = domain

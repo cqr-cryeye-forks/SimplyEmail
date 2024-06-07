@@ -7,8 +7,9 @@ import logging
 from Helpers import helpers, Parser
 
 
-class YahooEmailSearch:
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Yahoo Search for Emails"
         self.description = "Uses Yahoo to search for emails, parses them out of the HTML"
         self.domain = domain
@@ -55,7 +56,7 @@ class YahooEmailSearch:
                 print(helpers.color(error_msg, warning=True))
 
             self.counter += 100
-            # helpers.modsleep(self.sleep, jitter=self.jitter)
+            # helpers.mod_sleep(self.sleep, jitter=self.jitter)
 
     def get_emails(self):
         parser = Parser.Parser(self.html)

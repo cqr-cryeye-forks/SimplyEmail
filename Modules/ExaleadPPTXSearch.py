@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 class ClassName:
 
     def __init__(self, Domain, verbose=False):
+        self.apikey = False
         self.name = "Exalead PPTX Search for Emails"
         self.description = "Uses Exalead Dorking to search PPTX for emails"
         self.Domain = Domain

@@ -4,9 +4,10 @@ import logging
 from Helpers import Download, Parser, helpers
 
 
-class AskSearch:
+class ClassName:
 
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.logger = logging.getLogger("SimplyEmail.AskSearch")
         self.name = "Ask Search for Emails"
         self.description = "Simple Ask Search for Emails"
@@ -77,6 +78,6 @@ class AskSearch:
 
 # Пример использования
 if __name__ == "__main__":
-    ask_search = AskSearch("example.com", verbose=True)
+    ask_search = ClassName("example.com", verbose=True)
     results = ask_search.execute()
     print(results)

@@ -16,8 +16,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class GoogleCsvSearch:
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Google CSV Search for Emails"
         self.description = "Uses Google Dorking to search for emails"
         self.domain = domain

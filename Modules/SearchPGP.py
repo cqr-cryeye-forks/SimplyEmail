@@ -4,6 +4,7 @@ import configparser
 import logging
 from Helpers import Parser, helpers
 
+
 class ClassName:
     def __init__(self, domain, verbose=False):
         self.apikey = False

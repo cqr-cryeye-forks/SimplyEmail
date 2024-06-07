@@ -7,6 +7,7 @@ from Helpers import Parser, helpers, CanarioAPI
 
 class ClassName(object):
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Canar.io API PasteBin search"
         self.description = "Search Canar.io for paste potential data dumps, this can take a bit but a great source"
         self.domain = domain

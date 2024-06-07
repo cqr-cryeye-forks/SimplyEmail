@@ -4,8 +4,10 @@ import configparser
 import logging
 from Helpers import Parser, helpers
 
-class WhoisologySearch:
+
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Searching Whoisology"
         self.logger = logging.getLogger("SimplyEmail.Whoisology")
         self.description = "Search the Whoisology database for potential POC emails"
@@ -36,7 +38,7 @@ class WhoisologySearch:
             url = f"https://whoisology.com/archive_11/{self.domain}"
             response = requests.get(url, headers=self.user_agent)
             response.raise_for_status()
-            self.results = response.content
+            self.results = response.content.decode('utf-8')  # Декодирование байтов в строку
         except requests.RequestException as e:
             error_msg = f"[!] Major issue with Whoisology Search: {e}"
             self.logger.error("Whoisology could not download source (Check Connection)")

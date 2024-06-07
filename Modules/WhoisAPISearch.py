@@ -6,8 +6,9 @@ import logging
 from Helpers import Parser, helpers
 
 
-class WhoisAPISearch:
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Searching Whois"
         self.description = "Search the Whois database for potential POC emails"
         self.domain = domain

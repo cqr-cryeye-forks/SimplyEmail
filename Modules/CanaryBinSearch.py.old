@@ -6,6 +6,7 @@ import logging
 from bs4 import BeautifulSoup  # Updated import
 from Helpers import Download, Parser, helpers
 
+
 class ClassName(object):
     def __init__(self, domain, verbose=False):
         self.apikey = False

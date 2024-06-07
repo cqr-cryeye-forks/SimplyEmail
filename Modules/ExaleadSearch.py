@@ -12,8 +12,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class ExaleadSearch:
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Exalead Search for Emails"
         self.description = "Uses Exalead to search for emails and parses them out of the HTML"
         self.domain = domain

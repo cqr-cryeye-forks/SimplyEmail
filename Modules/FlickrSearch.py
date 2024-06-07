@@ -9,8 +9,10 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class FlickrSearch:
+
+class ClassName:
     def __init__(self, domain, verbose=False):
+        self.apikey = False
         self.name = "Searching Flickr"
         self.description = "Search the Flickr top relevant results for emails"
         self.domain = domain
