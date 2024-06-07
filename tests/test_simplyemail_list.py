@@ -49,19 +49,19 @@ def test_searchpgp():
 
 
 def test_asksearch():
-    s = AskSearch.AskSearch('gmail.com', verbose=True)
+    s = AskSearch.ClassName('gmail.com', verbose=True)
     FinalOutput, HtmlResults, JsonResults = s.execute()
     assert len(FinalOutput) > 0
 
 
 def test_yahoosearch():
-    s = YahooSearch.YahooEmailSearch('gmail.com', verbose=True)
+    s = YahooSearch.ClassName('gmail.com', verbose=True)
     FinalOutput, HtmlResults, JsonResults = s.execute()
     assert len(FinalOutput) > 0
 
 
 def test_whoisapi():
-    s = WhoisAPISearch.WhoisAPISearch('verisgroup.com', verbose=True)
+    s = WhoisAPISearch.ClassName('verisgroup.com', verbose=True)
     FinalOutput, HtmlResults, JsonResults = s.execute()
     assert 'abuse@web.com' in FinalOutput
 
@@ -74,7 +74,7 @@ def test_redditsearch():
 
 
 def test_flickrsearch():
-    s = FlickrSearch.FlickrSearch('microsoft.com', verbose=True)
+    s = FlickrSearch.ClassName('microsoft.com', verbose=True)
     FinalOutput, HtmlResults, JsonResults = s.execute()
 
 
