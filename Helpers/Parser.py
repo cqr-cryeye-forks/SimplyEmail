@@ -30,8 +30,7 @@ class Parser:
             self.input_data = self.input_data.replace(old, new)
 
     def url_clean(self):
-        self.input_data = self.input_data.replace('<em>', '').replace('</em>', '').replace('%2f', ' ').replace('%3a',
-                                                                                                               ' ')
+        self.input_data = self.input_data.replace('<em>', '').replace('</em>', '').replace('%2f', ' ').replace('%3a', ' ')
         chars_to_remove = ['<', '>', ':', '=', ';', '&', '%3A', '%3D', '%3C']
         for char in chars_to_remove:
             self.input_data = self.input_data.replace(char, ' ')
@@ -54,40 +53,39 @@ class Parser:
 
     def grep_find_emails(self):
         final_output = []
-        start_file_name = f"temp_{randint(1000, 999999)}.txt"
-        end_file_name = f"temp_{randint(1000, 999999)}.txt"
 
         try:
-            with open(start_file_name, "w") as myfile:
-                myfile.write(self.input_data)
+            result = subprocess.run(
+                ['grep', '-i', '-o', '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}'],
+                input=self.input_data,
+                text=True,
+                capture_output=True,
+                check=True
+            )
+            val = result.stdout
+            if val:
+                final_output = val.splitlines()
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 1:
+                self.logger.warning("No emails found.")
+            else:
+                self.logger.error('Grep email finding issue: ' + str(e))
 
-            ps = subprocess.Popen(('grep', "@", start_file_name), stdout=subprocess.PIPE)
-            val = subprocess.check_output(("grep", "-i", "-o", '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}'),
-                                          stdin=ps.stdout)
-            self.email_evasion_check(ps)
-        except Exception as e:
-            self.logger.error('Grep email finding issue: ' + str(e))
-        finally:
-            if os.path.exists(start_file_name):
-                os.remove(start_file_name)
-
-        if val:
-            with open(end_file_name, "w") as myfile:
-                myfile.write(val.decode())
-            with open(end_file_name, "r") as myfile:
-                output = myfile.readlines()
-            if os.path.exists(end_file_name):
-                os.remove(end_file_name)
-            for item in output:
-                final_output.append(item.strip())
         return final_output
 
     def email_evasion_check(self, data):
         try:
-            subprocess.check_output(("grep", "-i", "-o", '[A-Z0-9._%+-]+\\s+@+\\s+[A-Z0-9.-]+\\.[A-Z]{2,4}'),
-                                    stdin=data.stdout)
-        except Exception as e:
+            result = subprocess.run(
+                ['grep', '-i', '-o', '[A-Z0-9._%+-]+\\s+@+\\s+[A-Z0-9.-]+\\.[A-Z]{2,4}'],
+                input=data,
+                text=True,
+                capture_output=True,
+                check=True
+            )
+            return result.stdout.splitlines()
+        except subprocess.CalledProcessError as e:
             self.logger.error('Email evasion check issue: ' + str(e))
+            return []
 
     def clean_list_output(self):
         return [item.rstrip("\n") for item in self.input_data]
