@@ -33,7 +33,6 @@ def cli_parser():
     parser.add_argument("--verify", action='store_true', help="Set this to enable SMTP server email verify")
     parser.add_argument("--verbose", action='store_true', help="Set this switch for verbose output of modules")
     parser.add_argument("--json", metavar='json-emails.txt', help="Set this switch for JSON output to specific file")
-    parser.add_argument("--output", help="Svae output in Json file. Example='data.json'")
 
     args = parser.parse_args()
     return args
@@ -45,7 +44,7 @@ def task_starter(version):
     args = cli_parser()
 
     MAIN_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent
-    JSON_FILE: Final[pathlib.Path] = args.output / MAIN_DIR
+    JSON_FILE: Final[pathlib.Path] = MAIN_DIR / args.json
 
     if args.email:
         cli_domain = args.email.lower()
@@ -64,7 +63,7 @@ def task_starter(version):
         version_check.version_request()
         exit()
 
-    task.TaskSelector(cli_domain, output=JSON_FILE)
+    task.TaskSelector(cli_domain, json=JSON_FILE)
 
 
 def main():
